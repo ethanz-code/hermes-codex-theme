@@ -119,12 +119,12 @@ Everything lives in **Settings → Plugins → Codex Theme**, grouped into
 | Reading width | Compact (768px) / Comfortable (880px, default) / Roomy (992px) | Theme-level knob; Hermes has no built-in width setting |
 | Content spacing | Compact (1.55) / Comfortable (1.7, default) / Roomy (1.8) | Line height + paragraph & bubble rhythm |
 | Text font | Default / Serif / Mono | Chinese fallbacks in every preset; *Default* keeps theme/app fonts |
-| Code font | Default / Fira Code / Courier | Fira Code / JetBrains Mono must be installed locally |
+|| Code font | Default / Fira Code / Courier | Fira Code / JetBrains Mono must be installed locally — otherwise the system mono kicks in |
 | Language | Follow system / 中文 / English | Plugin UI only; Hermes' own language is untouched |
 | Feedback | *Open GitHub Issues* | Opens the repo's Issues page in your browser |
 
-`⌘K` also carries two quiet rows: *Theme: 使用 Codex 主题* and *Theme: Codex
-主题设置* (both languages are searchable).
+`⌘K` also carries two quiet rows: *Theme: Use Codex theme* and *Theme: Codex
+theme settings* (searchable in both languages).
 
 > [!NOTE]
 > Choosing a non-default font preset overrides `--dt-font-sans` /

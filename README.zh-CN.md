@@ -113,7 +113,7 @@ hermes plugins install ethanz-code/hermes-codex-theme
 | 阅读宽度 | 紧凑（768px）/ 舒适（880px，默认）/ 宽松（992px） | 主题级旋钮；Hermes 无内置宽度设置 |
 | 内容间距 | 紧凑（1.55）/ 舒适（1.7，默认）/ 宽松（1.8） | 行高 + 段距/气泡节奏联动 |
 | 正文字体 | 默认 / 衬线 / 等宽 | 每档带中文回退；「默认」沿用主题/应用字体 |
-| 代码字体 | 默认 / Fira Code / Courier | Fira Code / JetBrains Mono 需本机已安装 |
+|| 代码字体 | 默认 / Fira Code / Courier | Fira Code、JetBrains Mono 需本机已安装，否则自动回退系统等宽 |
 | 语言 | 跟随系统 / 中文 / English | 只作用于插件界面，不改 Hermes 语言 |
 | 反馈问题 | 「打开 GitHub Issues」 | 在浏览器打开本仓库 Issues 页 |
 
