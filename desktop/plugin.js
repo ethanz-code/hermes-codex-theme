@@ -11,7 +11,7 @@
  *
  * 控制入口（不在输入框加东西）：
  *   设置 → 插件 → Codex Theme：亮暗模式（跟随系统/深色/浅色）、阅读栏宽度（分段控件）、
- *   语言（跟随系统/中文/英文，文案全走 i18n）
+ *   语言（跟随系统/中文/英文，文案全走 i18n）、反馈问题（GitHub Issues）
  *   ⌘K：「Theme: 使用 Codex 主题」「Theme: Codex 主题设置」
  *
  * 安装：~/.hermes/desktop-plugins/codex-theme/plugin.js（目录名 == id）
@@ -22,6 +22,7 @@ import { useState } from 'react'
 import { jsx, jsxs } from 'react/jsx-runtime'
 
 const ID = 'codex-theme'
+const ISSUES_URL = 'https://github.com/ethanz-code/hermes-codex-theme/issues'
 
 // ─── 偏好（阅读栏宽度），注册时与设置页共用 ──────────────────────────────────
 // 只动主题级的旋钮；不碰 Hermes 自己的配置项（如 --chat-text-scale 正文缩放、
@@ -37,6 +38,7 @@ const COL_WIDTHS = [
 const PREF_DEFAULTS = { colWidth: '55rem', language: 'system' }
 const LANGUAGES = ['system', 'zh', 'en']
 let storage = null
+let pluginOs = null
 
 // 语言偏好变化的订阅口（设置页切换语言时重建 ⌘K / 设置页标题等注册期文案）。
 const languageListeners = new Set()
@@ -73,6 +75,14 @@ function applyPrefs(prefs) {
   const stored = prefs || (storage ? storage.get('prefs', null) : null) || {}
   const p = { ...PREF_DEFAULTS, ...stored }
   document.documentElement.style.setProperty('--composer-width', normalizeColWidth(p.colWidth))
+}
+
+function openIssues() {
+  if (pluginOs && typeof pluginOs.openExternal === 'function') {
+    pluginOs.openExternal(ISSUES_URL)
+  } else {
+    console.error('[codex-theme] ctx.os.openExternal unavailable in this build')
+  }
 }
 
 // ─── 双套配色（Codex 基准 + ChatGPT 石墨纸感的灰阶） ─────────────────────────
@@ -336,7 +346,10 @@ const LOCALES = {
     languageLabel: 'Language',
     languageHint: 'Language for this plugin’s UI (settings, palette, popups) — follows the system & app language by default, or pin it below.',
     langZh: '中文',
-    langEn: 'English'
+    langEn: 'English',
+    feedbackLabel: 'Feedback',
+    feedbackHint: 'Found a bug or have a suggestion? Report it on GitHub Issues.',
+    feedbackAction: 'Open GitHub Issues'
   },
   zh: {
     title: 'Codex 主题',
@@ -360,7 +373,10 @@ const LOCALES = {
     languageLabel: '语言',
     languageHint: '本插件界面（设置页、⌘K、弹窗）的显示语言 —— 默认跟随系统与应用语言，也可固定为中文或英文。',
     langZh: '中文',
-    langEn: 'English'
+    langEn: 'English',
+    feedbackLabel: '反馈问题',
+    feedbackHint: '遇到问题或有功能建议？到 GitHub Issues 反馈。',
+    feedbackAction: '打开 GitHub Issues'
   }
 }
 
@@ -474,6 +490,17 @@ function SettingsPage() {
             { id: 'en', label: t('langEn') }
           ]
         })
+      }),
+
+      jsx(ListRow, {
+        title: t('feedbackLabel'),
+        description: t('feedbackHint'),
+        action: jsx(Button, {
+          variant: 'outline',
+          size: 'sm',
+          onClick: openIssues,
+          children: t('feedbackAction')
+        })
       })
     ]
   })
@@ -488,6 +515,7 @@ export default {
   description: 'Codex × ChatGPT inspired theme for the Hermes Desktop chat — dual light/dark palettes that follow the system appearance, graphite-on-paper typography with a 1.7 root line height, 10px radius system, hairline borders, and a Settings page (appearance mode + 768/880/992px reading column presets via segmented controls). (v1.0.0 · ethanz-code)',
   register(ctx) {
     storage = ctx.storage
+    pluginOs = ctx.os || null
     ctx.i18n.register(LOCALES)
     const t = makeT(ctx.i18n.t)
 
