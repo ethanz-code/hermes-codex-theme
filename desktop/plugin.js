@@ -10,7 +10,8 @@
  *   - 阅读栏 768 / 880 / 992px 三档（默认 880px），行高 1.7 —— ChatGPT 式阅读节奏
  *
  * 控制入口（不在输入框加东西）：
- *   设置 → 插件 → Codex Theme：亮暗模式（跟随系统/深色/浅色）、阅读栏宽度（分段控件）
+ *   设置 → 插件 → Codex Theme：亮暗模式（跟随系统/深色/浅色）、阅读栏宽度（分段控件）、
+ *   语言（跟随系统/中文/英文，文案全走 i18n）
  *   ⌘K：「Theme: 使用 Codex 主题」「Theme: Codex 主题设置」
  *
  * 安装：~/.hermes/desktop-plugins/codex-theme/plugin.js（目录名 == id）
@@ -33,23 +34,39 @@ const COL_WIDTHS = [
   { value: '62rem', labelKey: 'wide' }
 ]
 
-const PREF_DEFAULTS = { colWidth: '55rem' }
+const PREF_DEFAULTS = { colWidth: '55rem', language: 'system' }
+const LANGUAGES = ['system', 'zh', 'en']
 let storage = null
+
+// 语言偏好变化的订阅口（设置页切换语言时重建 ⌘K / 设置页标题等注册期文案）。
+const languageListeners = new Set()
+
+function onLanguagePrefChange(listener) {
+  languageListeners.add(listener)
+  return () => languageListeners.delete(listener)
+}
 
 function normalizeColWidth(value) {
   return COL_WIDTHS.some(o => o.value === value) ? value : PREF_DEFAULTS.colWidth
 }
 
+function normalizeLanguage(value) {
+  return LANGUAGES.includes(value) ? value : PREF_DEFAULTS.language
+}
+
 function getPref(key) {
   const v = storage ? storage.get('prefs', null) : null
   const raw = (v && v[key]) || PREF_DEFAULTS[key]
-  return key === 'colWidth' ? normalizeColWidth(raw) : raw
+  if (key === 'colWidth') return normalizeColWidth(raw)
+  if (key === 'language') return normalizeLanguage(raw)
+  return raw
 }
 
 function setPref(key, value) {
   const next = { ...PREF_DEFAULTS, ...((storage && storage.get('prefs', null)) || {}), [key]: value }
   if (storage) storage.set('prefs', next)
   applyPrefs(next)
+  if (key === 'language') languageListeners.forEach(listener => listener())
 }
 
 function applyPrefs(prefs) {
@@ -279,8 +296,6 @@ const customCSS = `
 
 const codexTheme = {
   name: 'codex',
-  label: 'Codex',
-  description: 'Codex × ChatGPT · 亮暗双套 · 随系统切换',
   colors: light,
   darkColors: dark,
   typography: {
@@ -296,10 +311,15 @@ const codexTheme = {
 
 // ─── 设置页（设置 → 插件 → Codex Theme）────────────────────────────────────────
 
-// 自带文案（不改 app 的 i18n 目录）；跟随应用语言，缺省回退英文。
+// 自带文案（不改 app 的 i18n 目录）；默认跟随系统/应用语言，缺省回退英文，
+// 也可在设置页固定为中文或英文（prefs.language）。
 const LOCALES = {
   en: {
     title: 'Codex Theme',
+    themeLabel: 'Codex',
+    themeDescription: 'Codex × ChatGPT · dual palette (light/dark) · follows the system appearance',
+    paletteApply: 'Theme: Use Codex theme',
+    paletteSettings: 'Theme: Codex theme settings',
     status: name => `Active: ${name} · dual palette (light/dark), design language after OpenAI Codex & ChatGPT`,
     reapply: 'Reapply',
     reapplied: 'Codex theme reapplied',
@@ -312,10 +332,18 @@ const LOCALES = {
     widthHint: 'Prose column width — Narrow 768px · Standard 880px · Wide 992px (ChatGPT uses 720–768px).',
     narrow: 'Narrow',
     standard: 'Standard',
-    wide: 'Wide'
+    wide: 'Wide',
+    languageLabel: 'Language',
+    languageHint: 'Language for this plugin’s UI (settings, palette, popups) — follows the system & app language by default, or pin it below.',
+    langZh: '中文',
+    langEn: 'English'
   },
   zh: {
     title: 'Codex 主题',
+    themeLabel: 'Codex',
+    themeDescription: 'Codex × ChatGPT · 亮暗双套 · 随系统切换',
+    paletteApply: 'Theme: 使用 Codex 主题',
+    paletteSettings: 'Theme: Codex 主题设置',
     status: name => `当前生效：${name} · 亮暗双套，设计语言学自 OpenAI Codex 与 ChatGPT`,
     reapply: '重新应用',
     reapplied: 'Codex 主题已重新应用',
@@ -328,18 +356,48 @@ const LOCALES = {
     widthHint: '正文列宽 —— 窄 768px · 标准 880px · 宽 992px（ChatGPT 为 720–768px）。',
     narrow: '窄',
     standard: '标准',
-    wide: '宽'
+    wide: '宽',
+    languageLabel: '语言',
+    languageHint: '本插件界面（设置页、⌘K、弹窗）的显示语言 —— 默认跟随系统与应用语言，也可固定为中文或英文。',
+    langZh: '中文',
+    langEn: 'English'
   }
 }
 
+function lookupMessage(locale, key, args) {
+  const bundle = locale === 'zh' ? LOCALES.zh : LOCALES.en
+  const value = bundle[key] !== undefined ? bundle[key] : LOCALES.en[key]
+  if (value === undefined) return key
+  return typeof value === 'function' ? value(...args) : value
+}
+
+// prefs.language 固定为 zh/en 时绕过应用语言；'system' 交给 SDK 的翻译器
+// （跟随系统/应用语言，缺省回退英文）。fallbackT：ctx.i18n.t 或 usePluginI18n(ID)。
+function makeT(fallbackT) {
+  return (key, ...args) => {
+    const lang = getPref('language')
+    return lang === 'system' ? fallbackT(key, ...args) : lookupMessage(lang, key, args)
+  }
+}
+
+function buildTheme(t) {
+  return { ...codexTheme, label: t('themeLabel'), description: t('themeDescription') }
+}
+
 function SettingsPage() {
-  const t = usePluginI18n(ID)
+  const t = makeT(usePluginI18n(ID))
   const { mode, setMode, themeName } = useTheme()
   const [colWidth, setColWidth] = useState(() => getPref('colWidth'))
+  const [language, setLanguage] = useState(() => getPref('language'))
 
   const pickWidth = value => {
     setPref('colWidth', value)
     setColWidth(value)
+  }
+
+  const pickLanguage = value => {
+    setPref('language', value)
+    setLanguage(value)
   }
 
   return jsxs('div', {
@@ -402,6 +460,20 @@ function SettingsPage() {
           onChange: pickWidth,
           options: COL_WIDTHS.map(o => ({ id: o.value, label: t(o.labelKey) }))
         })
+      }),
+
+      jsx(ListRow, {
+        title: t('languageLabel'),
+        description: t('languageHint'),
+        action: jsx(SegmentedControl, {
+          value: language,
+          onChange: pickLanguage,
+          options: [
+            { id: 'system', label: t('followSystem') },
+            { id: 'zh', label: t('langZh') },
+            { id: 'en', label: t('langEn') }
+          ]
+        })
       })
     ]
   })
@@ -417,9 +489,7 @@ export default {
   register(ctx) {
     storage = ctx.storage
     ctx.i18n.register(LOCALES)
-
-    // 主题本体：外观设置网格 / ⌘K / /skin 皆可见
-    ctx.register({ id: 'codex', area: THEMES_AREA, data: codexTheme })
+    const t = makeT(ctx.i18n.t)
 
     // 首次安装时自动接管一次主题；之后完全尊重用户在「外观」里的手动选择
     // （避免每次启动/热重载把用户选的其它主题抢回来）。切回 Codex：
@@ -433,42 +503,55 @@ export default {
     // 装载确认（热重载/启动排查的地面真值，见 desktop.log）
     console.log('[codex-theme] register ok v1.0.0')
 
-    // 设置 → 插件 → Codex Theme（亮暗 / 阅读栏）
-    if (typeof ctx.registerSettingsPage === 'function') {
-      ctx.registerSettingsPage({
-        id: 'codex-theme',
-        title: 'Codex Theme',
-        icon: 'paintcan',
-        render: () => jsx(SettingsPage, {})
-      })
-    } else {
-      console.error('[codex-theme] ctx.registerSettingsPage unavailable in this build')
+    // 注册期文案（主题名/描述、⌘K 标签、设置页标题）随语言重建：
+    // 主题本体（外观设置网格 / ⌘K / /skin 皆可见）、设置 → 插件 → Codex Theme、⌘K 入口。
+    let disposeStatic = () => {}
+
+    const registerStatic = () => {
+      disposeStatic()
+      const disposeThemeAndPalette = ctx.registerMany([
+        { id: 'codex', area: THEMES_AREA, data: buildTheme(t) },
+        {
+          id: 'palette-apply',
+          area: PALETTE_AREA,
+          data: {
+            id: 'codex-theme.apply',
+            label: t('paletteApply'),
+            keywords: ['codex', 'theme', '主题', 'appearance', '外观'],
+            run: () => {
+              requestTheme('codex')
+              applyPrefs()
+            }
+          }
+        },
+        {
+          id: 'palette-settings',
+          area: PALETTE_AREA,
+          data: {
+            id: 'codex-theme.settings',
+            label: t('paletteSettings'),
+            keywords: ['codex', 'theme', 'settings', '设置', '深色', '浅色', '亮', '暗'],
+            run: () => host.navigate(pluginSettingsHref('codex-theme'))
+          }
+        }
+      ])
+      const disposeSettingsPage =
+        typeof ctx.registerSettingsPage === 'function'
+          ? ctx.registerSettingsPage({
+              id: 'codex-theme',
+              title: t('title'),
+              icon: 'paintcan',
+              render: () => jsx(SettingsPage, {})
+            })
+          : (console.error('[codex-theme] ctx.registerSettingsPage unavailable in this build'), () => {})
+      disposeStatic = () => {
+        disposeThemeAndPalette()
+        disposeSettingsPage()
+      }
     }
 
-    // ⌘K 入口（低调、可选）
-    ctx.register({
-      id: 'palette-apply',
-      area: PALETTE_AREA,
-      data: {
-        id: 'codex-theme.apply',
-        label: 'Theme: 使用 Codex 主题',
-        keywords: ['codex', 'theme', '主题', 'appearance', '外观'],
-        run: () => {
-          requestTheme('codex')
-          applyPrefs()
-        }
-      }
-    })
-
-    ctx.register({
-      id: 'palette-settings',
-      area: PALETTE_AREA,
-      data: {
-        id: 'codex-theme.settings',
-        label: 'Theme: Codex 主题设置',
-        keywords: ['codex', 'theme', 'settings', '设置', '深色', '浅色', '亮', '暗'],
-        run: () => host.navigate(pluginSettingsHref('codex-theme'))
-      }
-    })
+    registerStatic()
+    ctx.i18n.onLocaleChange(registerStatic)
+    onLanguagePrefChange(registerStatic)
   }
 }
