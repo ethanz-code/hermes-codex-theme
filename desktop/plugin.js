@@ -16,9 +16,47 @@
  * 安装：~/.hermes/desktop-plugins/codex-theme/plugin.js（目录名 == id）
  */
 
-import { requestTheme, THEMES_AREA } from '@hermes/plugin-sdk'
+import { Button, host, ListRow, requestTheme, SegmentedControl, THEMES_AREA, usePluginI18n, useTheme } from '@hermes/plugin-sdk'
+import { useState } from 'react'
+import { jsx, jsxs } from 'react/jsx-runtime'
 
 const ID = 'codex-theme'
+
+// ─── 偏好（阅读栏宽度），注册时与设置页共用 ──────────────────────────────────
+// 只动主题级的旋钮；不碰 Hermes 自己的配置项（如 --chat-text-scale 正文缩放、
+// 聊天字体 display.chat_font、界面模式、透明度等），避免与设置互相覆盖。
+
+// 三档阅读栏：窄 768 / 标准 880（默认）/ 宽 992px。标准档是「宽一点才够读」取向。
+const COL_WIDTHS = [
+  { value: '48rem', labelKey: 'narrow' },
+  { value: '55rem', labelKey: 'standard' },
+  { value: '62rem', labelKey: 'wide' }
+]
+
+const PREF_DEFAULTS = { colWidth: '55rem' }
+let storage = null
+
+function normalizeColWidth(value) {
+  return COL_WIDTHS.some(o => o.value === value) ? value : PREF_DEFAULTS.colWidth
+}
+
+function getPref(key) {
+  const v = storage ? storage.get('prefs', null) : null
+  const raw = (v && v[key]) || PREF_DEFAULTS[key]
+  return key === 'colWidth' ? normalizeColWidth(raw) : raw
+}
+
+function setPref(key, value) {
+  const next = { ...PREF_DEFAULTS, ...((storage && storage.get('prefs', null)) || {}), [key]: value }
+  if (storage) storage.set('prefs', next)
+  applyPrefs(next)
+}
+
+function applyPrefs(prefs) {
+  const stored = prefs || (storage ? storage.get('prefs', null) : null) || {}
+  const p = { ...PREF_DEFAULTS, ...stored }
+  document.documentElement.style.setProperty('--composer-width', normalizeColWidth(p.colWidth))
+}
 
 // ─── 双套配色（Codex 基准 + ChatGPT 石墨纸感的灰阶） ─────────────────────────
 
@@ -256,6 +294,119 @@ const codexTheme = {
   customCSS
 }
 
+// ─── 设置页（设置 → 插件 → Codex Theme）────────────────────────────────────────
+
+// 自带文案（不改 app 的 i18n 目录）；跟随应用语言，缺省回退英文。
+const LOCALES = {
+  en: {
+    title: 'Codex Theme',
+    status: name => `Active: ${name} · dual palette (light/dark), design language after OpenAI Codex & ChatGPT`,
+    reapply: 'Reapply',
+    reapplied: 'Codex theme reapplied',
+    modeLabel: 'Appearance',
+    modeHint: '“Follow system” switches light/dark with the macOS appearance. Text size stays under Settings → Appearance.',
+    followSystem: 'Follow system',
+    dark: 'Dark',
+    light: 'Light',
+    widthLabel: 'Reading column',
+    widthHint: 'Prose column width — Narrow 768px · Standard 880px · Wide 992px (ChatGPT uses 720–768px).',
+    narrow: 'Narrow',
+    standard: 'Standard',
+    wide: 'Wide'
+  },
+  zh: {
+    title: 'Codex 主题',
+    status: name => `当前生效：${name} · 亮暗双套，设计语言学自 OpenAI Codex 与 ChatGPT`,
+    reapply: '重新应用',
+    reapplied: 'Codex 主题已重新应用',
+    modeLabel: '亮暗模式',
+    modeHint: '「跟随系统」自动跟随 macOS 外观。正文字号沿用「外观」设置，此处不覆盖。',
+    followSystem: '跟随系统',
+    dark: '深色',
+    light: '浅色',
+    widthLabel: '阅读栏宽度',
+    widthHint: '正文列宽 —— 窄 768px · 标准 880px · 宽 992px（ChatGPT 为 720–768px）。',
+    narrow: '窄',
+    standard: '标准',
+    wide: '宽'
+  }
+}
+
+function SettingsPage() {
+  const t = usePluginI18n(ID)
+  const { mode, setMode, themeName } = useTheme()
+  const [colWidth, setColWidth] = useState(() => getPref('colWidth'))
+
+  const pickWidth = value => {
+    setPref('colWidth', value)
+    setColWidth(value)
+  }
+
+  return jsxs('div', {
+    style: { display: 'grid', gap: 2, maxWidth: 560 },
+    children: [
+      jsxs('div', {
+        style: {
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'space-between',
+          gap: 12,
+          padding: '4px 0 10px'
+        },
+        children: [
+          jsxs('div', {
+            style: { minWidth: 0, flex: 1 },
+            children: [
+              jsx('div', {
+                style: { fontSize: 14, fontWeight: 500, color: 'var(--ui-text-primary)' },
+                children: t('title')
+              }),
+              jsx('div', {
+                style: { fontSize: 12, color: 'var(--ui-text-tertiary)', marginTop: 4 },
+                children: t('status', themeName)
+              })
+            ]
+          }),
+          jsx(Button, {
+            variant: 'outline',
+            size: 'sm',
+            onClick: () => {
+              requestTheme('codex')
+              applyPrefs()
+              host.notify({ kind: 'info', message: t('reapplied') })
+            },
+            children: t('reapply')
+          })
+        ]
+      }),
+
+      jsx(ListRow, {
+        title: t('modeLabel'),
+        description: t('modeHint'),
+        action: jsx(SegmentedControl, {
+          value: mode,
+          onChange: v => setMode(v),
+          options: [
+            { id: 'system', label: t('followSystem') },
+            { id: 'dark', label: t('dark') },
+            { id: 'light', label: t('light') }
+          ]
+        })
+      }),
+
+      jsx(ListRow, {
+        title: t('widthLabel'),
+        description: t('widthHint'),
+        action: jsx(SegmentedControl, {
+          value: colWidth,
+          onChange: pickWidth,
+          options: COL_WIDTHS.map(o => ({ id: o.value, label: t(o.labelKey) }))
+        })
+      })
+    ]
+  })
+}
+
 // ─── 插件入口 ─────────────────────────────────────────────────────────────────
 
 export default {
@@ -264,18 +415,35 @@ export default {
   // 面板描述的唯一来源（desktop 契约无 version/author 字段，尾注与 plugin.yaml 的 version/author 同步）
   description: 'Codex × ChatGPT inspired theme for the Hermes Desktop chat — dual light/dark palettes that follow the system appearance, graphite-on-paper typography with a 1.7 root line height, 10px radius system, hairline borders, and a Settings page (appearance mode + 768/880/992px reading column presets via segmented controls). (v1.0.0 · ethanz-code)',
   register(ctx) {
+    storage = ctx.storage
+    ctx.i18n.register(LOCALES)
+
     // 主题本体：外观设置网格 / ⌘K / /skin 皆可见
     ctx.register({ id: 'codex', area: THEMES_AREA, data: codexTheme })
 
     // 首次安装时自动接管一次主题；之后完全尊重用户在「外观」里的手动选择
     // （避免每次启动/热重载把用户选的其它主题抢回来）。切回 Codex：
     // 设置页「重新应用」或 ⌘K。
-    if (!ctx.storage.get('installed', false)) {
-      ctx.storage.set('installed', true)
+    if (!storage.get('installed', false)) {
+      storage.set('installed', true)
       requestTheme('codex')
     }
+    applyPrefs()
 
     // 装载确认（热重载/启动排查的地面真值，见 desktop.log）
     console.log('[codex-theme] register ok v1.0.0')
+
+    // 设置 → 插件 → Codex Theme（亮暗 / 阅读栏）
+    if (typeof ctx.registerSettingsPage === 'function') {
+      ctx.registerSettingsPage({
+        id: 'codex-theme',
+        title: 'Codex Theme',
+        icon: 'paintcan',
+        render: () => jsx(SettingsPage, {})
+      })
+    } else {
+      console.error('[codex-theme] ctx.registerSettingsPage unavailable in this build')
+    }
+
   }
 }
