@@ -1,0 +1,5 @@
+name: codex-theme
+version: "1.0.0"
+description: "Codex × ChatGPT inspired theme for the Hermes Desktop chat — dual light/dark palettes that follow the system appearance, graphite-on-paper typography with a 1.7 root line height, 10px radius system, hairline borders, and a Settings page (appearance mode + 768/880/992px reading column presets via segmented controls)."
+author: "ethanz-code"
+requires_hermes: ">=0.22.0"
