@@ -25,7 +25,7 @@ import { jsx, jsxs } from 'react/jsx-runtime'
 const ID = 'codex-theme'
 const ISSUES_URL = 'https://github.com/ethanz-code/hermes-codex-theme/issues'
 
-// ─── 偏好（阅读宽度 / 内容间距），注册时与设置页共用 ─────────────────────────
+// ─── 偏好（阅读宽度 / 内容间距 / 字体），注册时与设置页共用 ─────────────────
 // 只动主题级的旋钮；不碰 Hermes 自己的配置项（如 --chat-text-scale 正文缩放、
 // 聊天字体 display.chat_font、界面模式、透明度等），避免与设置互相覆盖。
 
@@ -37,6 +37,47 @@ const COL_WIDTHS = [
   { value: '62rem', labelKey: 'roomy' }
 ]
 
+// 字体档位：正文字体 → --dt-font-sans，代码字体 → --dt-font-mono。
+// 每档都排了中文回退（苹方/雅黑/思源），中英文混排皆可；「默认」档不写规则，
+// 沿用主题与应用自己的字体（含 display.chat_font / desktop.font_family）。
+// 只覆盖主题级变量本身，不写 Hermes 的字体配置项。
+const TEXT_FONTS = [
+  { value: 'default', labelKey: 'fontDefault' },
+  {
+    value: 'serif',
+    labelKey: 'fontSerif',
+    stack: "Georgia, 'Times New Roman', 'Songti SC', STSong, 'Noto Serif SC', 'Source Han Serif SC', SimSun, serif"
+  },
+  {
+    value: 'mono',
+    labelKey: 'fontMonoText',
+    stack: "'SF Mono', SFMono-Regular, Menlo, Monaco, Consolas, 'Liberation Mono', 'PingFang SC', 'Hiragino Sans GB', 'Microsoft YaHei', 'Noto Sans CJK SC', monospace"
+  }
+]
+const CODE_FONTS = [
+  { value: 'default', labelKey: 'fontDefault' },
+  {
+    value: 'fira',
+    labelKey: 'fontFira',
+    stack: "'Fira Code', 'FiraCode Nerd Font', 'JetBrains Mono', 'SF Mono', SFMono-Regular, Menlo, Consolas, 'Liberation Mono', 'PingFang SC', 'Hiragino Sans GB', 'Microsoft YaHei', 'Noto Sans CJK SC', monospace"
+  },
+  {
+    value: 'courier',
+    labelKey: 'fontCourier',
+    stack: "'Courier New', Courier, Menlo, Consolas, 'Liberation Mono', 'PingFang SC', 'Hiragino Sans GB', 'Microsoft YaHei', 'Noto Sans CJK SC', monospace"
+  }
+]
+
+// 档位规则用 !important：主题每次应用都把 --dt-font-* 写在 <html> 内联样式上，
+// 普通规则压不过内联，重要声明可以（已在 Chromium 实测）。
+const FONT_PRESET_RULES = [
+  ...TEXT_FONTS.map(o => ['data-codex-text-font', o.value, '--dt-font-sans', o.stack]),
+  ...CODE_FONTS.map(o => ['data-codex-code-font', o.value, '--dt-font-mono', o.stack])
+]
+  .filter(entry => entry[3])
+  .map(([attr, value, cssVar, stack]) => `html[${attr}='${value}'] { ${cssVar}: ${stack} !important; }`)
+  .join('\n')
+
 // 三档内容间距：紧凑 / 舒适（默认）/ 宽松 —— 行高与段距整档缩放，
 // 见 customCSS 的 html[data-codex-density] 规则。
 const DENSITIES = [
@@ -45,7 +86,7 @@ const DENSITIES = [
   { value: 'roomy', labelKey: 'roomy' }
 ]
 
-const PREF_DEFAULTS = { colWidth: '55rem', density: 'comfortable', language: 'system' }
+const PREF_DEFAULTS = { colWidth: '55rem', density: 'comfortable', language: 'system', fontText: 'default', fontCode: 'default' }
 const LANGUAGES = ['system', 'zh', 'en']
 let storage = null
 let pluginOs = null
@@ -70,12 +111,18 @@ function normalizeDensity(value) {
   return DENSITIES.some(o => o.value === value) ? value : PREF_DEFAULTS.density
 }
 
+function normalizeFont(value, list) {
+  return list.some(o => o.value === value) ? value : 'default'
+}
+
 function getPref(key) {
   const v = storage ? storage.get('prefs', null) : null
   const raw = (v && v[key]) || PREF_DEFAULTS[key]
   if (key === 'colWidth') return normalizeColWidth(raw)
   if (key === 'density') return normalizeDensity(raw)
   if (key === 'language') return normalizeLanguage(raw)
+  if (key === 'fontText') return normalizeFont(raw, TEXT_FONTS)
+  if (key === 'fontCode') return normalizeFont(raw, CODE_FONTS)
   return raw
 }
 
@@ -92,6 +139,8 @@ function applyPrefs(prefs) {
   const root = document.documentElement
   root.style.setProperty('--composer-width', normalizeColWidth(p.colWidth))
   root.dataset.codexDensity = normalizeDensity(p.density)
+  root.dataset.codexTextFont = normalizeFont(p.fontText, TEXT_FONTS)
+  root.dataset.codexCodeFont = normalizeFont(p.fontCode, CODE_FONTS)
 }
 
 function openIssues() {
@@ -466,6 +515,11 @@ html.dark [data-slot='dialog-overlay'] {
   flex-shrink: 0;
   white-space: nowrap;
 }
+
+/* ── 字体档位（设置页切换即时生效）── 主题把 --dt-font-sans / --dt-font-mono 写在
+   <html> 内联样式上，这里用 !important 的档位规则压过内联值；「默认」档无规则，
+   走主题/应用原值。规则由 TEXT_FONTS / CODE_FONTS 生成。 */
+${FONT_PRESET_RULES}
 `
 
 const codexTheme = {
@@ -512,6 +566,15 @@ const LOCALES = {
     compact: 'Compact',
     comfortable: 'Comfortable',
     roomy: 'Roomy',
+    fontLabel: 'Text font',
+    fontHint: 'Typeface for UI and prose. “Default” keeps the theme/app font settings; every preset carries Chinese fallbacks so mixed Chinese/English text renders well.',
+    codeLabel: 'Code font',
+    codeHint: 'Monospace for code blocks and inline code, with Chinese fallbacks. Fira Code / JetBrains Mono must be installed locally — otherwise the system mono kicks in.',
+    fontDefault: 'Default',
+    fontSerif: 'Serif',
+    fontMonoText: 'Mono',
+    fontFira: 'Fira Code',
+    fontCourier: 'Courier',
     panelGeneral: 'General',
     languageLabel: 'Language',
     languageHint: 'Language for this plugin’s UI (settings, palette, popups) — follows the system & app language by default, or pin it below.',
@@ -543,8 +606,16 @@ const LOCALES = {
     densityHint: '行距与段落节奏 —— 紧凑 1.55 · 舒适 1.7（默认）· 宽松 1.8。',
     compact: '紧凑',
     comfortable: '舒适',
-    roomy: '宽松'
-,
+    roomy: '宽松',
+    fontLabel: '正文字体',
+    fontHint: '界面与正文的字体。「默认」沿用主题与应用的字体设置；其余档位带中文回退，中英文混排皆可读。',
+    codeLabel: '代码字体',
+    codeHint: '代码块与行内代码的等宽字体，中文按苹方/雅黑回退。Fira Code、JetBrains Mono 需本机已安装，否则自动回退系统等宽。',
+    fontDefault: '默认',
+    fontSerif: '衬线',
+    fontMonoText: '等宽',
+    fontFira: 'Fira Code',
+    fontCourier: 'Courier',
     panelGeneral: '通用',
     languageLabel: '语言',
     languageHint: '本插件界面（设置页、⌘K、弹窗）的显示语言 —— 默认跟随系统与应用语言，也可固定为中文或英文。',
@@ -609,6 +680,8 @@ function SettingsPage() {
   const [colWidth, setColWidth] = useState(() => getPref('colWidth'))
   const [language, setLanguage] = useState(() => getPref('language'))
   const [density, setDensity] = useState(() => getPref('density'))
+  const [fontText, setFontText] = useState(() => getPref('fontText'))
+  const [fontCode, setFontCode] = useState(() => getPref('fontCode'))
 
   const pickWidth = value => {
     setPref('colWidth', value)
@@ -623,6 +696,16 @@ function SettingsPage() {
   const pickDensity = value => {
     setPref('density', value)
     setDensity(value)
+  }
+
+  const pickTextFont = value => {
+    setPref('fontText', value)
+    setFontText(value)
+  }
+
+  const pickCodeFont = value => {
+    setPref('fontCode', value)
+    setFontCode(value)
   }
 
   return jsxs('div', {
@@ -695,6 +778,26 @@ function SettingsPage() {
               value: density,
               onChange: pickDensity,
               options: DENSITIES.map(o => ({ id: o.value, label: t(o.labelKey) }))
+            })
+          }),
+          jsx(SettingsRow, {
+            key: 'textFont',
+            title: t('fontLabel'),
+            hint: t('fontHint'),
+            control: jsx(SegmentedControl, {
+              value: fontText,
+              onChange: pickTextFont,
+              options: TEXT_FONTS.map(o => ({ id: o.value, label: t(o.labelKey) }))
+            })
+          }),
+          jsx(SettingsRow, {
+            key: 'codeFont',
+            title: t('codeLabel'),
+            hint: t('codeHint'),
+            control: jsx(SegmentedControl, {
+              value: fontCode,
+              onChange: pickCodeFont,
+              options: CODE_FONTS.map(o => ({ id: o.value, label: t(o.labelKey) }))
             })
           })
         ]
@@ -786,7 +889,7 @@ export default {
           data: {
             id: 'codex-theme.settings',
             label: t('paletteSettings'),
-            keywords: ['codex', 'theme', 'settings', '设置', '深色', '浅色', '亮', '暗'],
+            keywords: ['codex', 'theme', 'settings', '设置', '深色', '浅色', '亮', '暗', 'font', '字体', '代码'],
             run: () => host.navigate(pluginSettingsHref('codex-theme'))
           }
         }
