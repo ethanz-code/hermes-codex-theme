@@ -16,7 +16,7 @@
  * 安装：~/.hermes/desktop-plugins/codex-theme/plugin.js（目录名 == id）
  */
 
-import { Button, host, ListRow, requestTheme, SegmentedControl, THEMES_AREA, usePluginI18n, useTheme } from '@hermes/plugin-sdk'
+import { Button, host, ListRow, PALETTE_AREA, pluginSettingsHref, requestTheme, SegmentedControl, THEMES_AREA, usePluginI18n, useTheme } from '@hermes/plugin-sdk'
 import { useState } from 'react'
 import { jsx, jsxs } from 'react/jsx-runtime'
 
@@ -445,5 +445,30 @@ export default {
       console.error('[codex-theme] ctx.registerSettingsPage unavailable in this build')
     }
 
+    // ⌘K 入口（低调、可选）
+    ctx.register({
+      id: 'palette-apply',
+      area: PALETTE_AREA,
+      data: {
+        id: 'codex-theme.apply',
+        label: 'Theme: 使用 Codex 主题',
+        keywords: ['codex', 'theme', '主题', 'appearance', '外观'],
+        run: () => {
+          requestTheme('codex')
+          applyPrefs()
+        }
+      }
+    })
+
+    ctx.register({
+      id: 'palette-settings',
+      area: PALETTE_AREA,
+      data: {
+        id: 'codex-theme.settings',
+        label: 'Theme: Codex 主题设置',
+        keywords: ['codex', 'theme', 'settings', '设置', '深色', '浅色', '亮', '暗'],
+        run: () => host.navigate(pluginSettingsHref('codex-theme'))
+      }
+    })
   }
 }
