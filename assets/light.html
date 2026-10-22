@@ -1,0 +1,57 @@
+<!doctype html>
+<html>
+<head>
+<meta charset="utf-8">
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body {
+    width: 1200px; height: 720px; overflow: hidden;
+    font-family: -apple-system, BlinkMacSystemFont, 'SF Pro Text', 'PingFang SC', sans-serif;
+    background: #ffffff; color: #1a1a1a; display: flex; flex-direction: column;
+    padding: 56px 72px;
+  }
+  .thread { width: 880px; margin: 0 auto; }
+  .meta { font-family: ui-monospace, 'SF Mono', Menlo, monospace; font-size: 12.5px; color: #8a8a8a; margin: 22px 0 6px; }
+  .me {
+    background: #f4f4f4; border: 1px solid #e7e7e7; border-radius: 12px;
+    padding: 11px 16px; font-size: 15px; line-height: 1.55; width: fit-content; margin-left: auto; max-width: 80%;
+  }
+  .flat { font-size: 15px; line-height: 1.7; color: #2c2c2c; margin-top: 20px; }
+  .flat h3 { font-size: 17px; font-weight: 600; color: #111; margin-bottom: 8px; letter-spacing: -0.01em; }
+  .flat ul { margin: 10px 0 0 1.35em; }
+  .flat li { margin: 5px 0; }
+  code { font-family: ui-monospace, 'SF Mono', Menlo, monospace; font-size: 0.88em; background: rgba(0,0,0,0.05); padding: 0.08em 0.3em; border-radius: 3px; }
+  .tool { margin-top: 22px; font-family: ui-monospace, 'SF Mono', Menlo, monospace; font-size: 12.5px; color: #8a8a8a; }
+  .tool b { color: #6f6f6f; font-weight: 500; }
+  .caption { position: absolute; bottom: 22px; left: 72px; font-size: 12px; letter-spacing: 0.12em; text-transform: uppercase; color: #b0b0b0; }
+  .sw { position: absolute; bottom: 18px; right: 72px; display: flex; gap: 8px; }
+  .sw div { width: 26px; height: 26px; border-radius: 7px; border: 1px solid rgba(0,0,0,0.12); }
+</style>
+</head>
+<body>
+  <div class="thread">
+    <div class="me">How does the light palette behave?</div>
+    <div class="meta">Thought · 2s</div>
+    <div class="flat">
+      <h3>Graphite on paper — light</h3>
+      Pure white canvas, surfaces one step off it
+      (<code>#F7F7F7</code> cards, <code>#F4F4F4</code> bubbles). Blue stays an
+      interaction colour only:
+      <ul>
+        <li>Focus rings, links, selection — <code>#0B72D9</code></li>
+        <li>Borders are hairlines (<code>#E7E7E7</code>), never shadows</li>
+        <li>Hierarchy is carried by weight, not by hue</li>
+      </ul>
+      <div class="tool"><b>Ran 2 commands</b> · theme-light.ts +18 −4 · 137ms</div>
+    </div>
+  </div>
+  <div class="caption">Codex Theme · light palette (rendered)</div>
+  <div class="sw">
+    <div style="background:#FFFFFF"></div>
+    <div style="background:#F7F7F7"></div>
+    <div style="background:#F4F4F4"></div>
+    <div style="background:#0B72D9"></div>
+    <div style="background:#181818"></div>
+  </div>
+</body>
+</html>
