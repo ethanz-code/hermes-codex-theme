@@ -36,6 +36,7 @@ const COL_WIDTHS = [
   { value: '55rem', labelKey: 'comfortable' },
   { value: '62rem', labelKey: 'roomy' }
 ]
+const LEGACY_COL_WIDTH = { '42rem': '48rem', '46rem': '48rem', '54rem': '55rem' }
 
 // 字体档位：正文字体 → --dt-font-sans，代码字体 → --dt-font-mono。
 // 每档都排了中文回退（苹方/雅黑/思源），中英文混排皆可；「默认」档不写规则，
@@ -100,7 +101,8 @@ function onLanguagePrefChange(listener) {
 }
 
 function normalizeColWidth(value) {
-  return COL_WIDTHS.some(o => o.value === value) ? value : PREF_DEFAULTS.colWidth
+  const v = LEGACY_COL_WIDTH[value] || value
+  return COL_WIDTHS.some(o => o.value === v) ? v : PREF_DEFAULTS.colWidth
 }
 
 function normalizeLanguage(value) {
@@ -860,7 +862,7 @@ export default {
     applyPrefs()
 
     // 装载确认（热重载/启动排查的地面真值，见 desktop.log）
-    console.log('[codex-theme] register ok v1.0.0')
+    console.log('[codex-theme] register ok v1.1.0')
 
     // 注册期文案（主题名/描述、⌘K 标签、设置页标题）随语言重建：
     // 主题本体（外观设置网格 / ⌘K / /skin 皆可见）、设置 → 插件 → Codex Theme、⌘K 入口。
