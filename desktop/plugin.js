@@ -3,39 +3,49 @@
  *
  * 设计语言（学自 OpenAI Codex 应用 + ChatGPT Web 的设计精髓）：
  *   - 石墨纸感（graphite-on-paper）：近白画布 / 近黑 #181818，正文主导、chrome 克制
- *   - 无彩体系：灰阶承载层级（字重 600/500/400），蓝色 #339CFF 只做交互点缀
+ *   - 无彩体系：灰阶承载层级（字重 600/500/400），蓝色只做交互点缀
  *   - 发丝线代替阴影：1px 边框做层次，表面保持平整
- *   - 圆角体系：控件/侧栏行/卡片 10px，用户气泡 16px，输入区 16px
- *   - 间距节奏：6 / 10 / 16 / 24 的倍数递进
- *   - 阅读栏 768 / 880 / 992px 三档（默认 880px），行高 1.7 —— ChatGPT 式阅读节奏
+ *   - 圆角走 OpenAI 官方刻度：内联代码 4px、侧栏行 8px、控件 10px、卡片/菜单/弹窗/气泡 12px、composer 20px
+ *   - 边框统一 10% 前景色（浅 #e7e7e7 / 深 #2a2a2a）；用户气泡前景 5%（浅 #f3f3f3 / 深 #202020）无描边
+ *   - 间距节奏：4px 网格；行高 1.7（紧凑 1.55 / 宽松 1.8）
+ *   - 阅读栏 768 / 880 / 992px 三档（默认 880px）
  *
  * 控制入口（不在输入框加东西）：
- *   设置 → 插件 → Codex Theme：亮暗模式（跟随系统/深色/浅色）、阅读栏宽度（分段控件）、
- *   语言（跟随系统/中文/英文，文案全走 i18n）、反馈问题（GitHub Issues）
+ *   设置 → 插件 → Codex Theme：亮暗模式（跟随系统/深色/浅色）、阅读宽度、内容间距、
+ *   字体（正文字体/代码字体）、语言（跟随系统/中文/英文，文案全走 i18n）、反馈问题（GitHub Issues）
  *   ⌘K：「Theme: 使用 Codex 主题」「Theme: Codex 主题设置」
  *
  * 安装：~/.hermes/desktop-plugins/codex-theme/plugin.js（目录名 == id）
  */
 
-import { Button, host, ListRow, PALETTE_AREA, pluginSettingsHref, requestTheme, SegmentedControl, THEMES_AREA, usePluginI18n, useTheme } from '@hermes/plugin-sdk'
+import { Button, host, PALETTE_AREA, pluginSettingsHref, requestTheme, SegmentedControl, THEMES_AREA, usePluginI18n, useTheme } from '@hermes/plugin-sdk'
 import { useState } from 'react'
 import { jsx, jsxs } from 'react/jsx-runtime'
 
 const ID = 'codex-theme'
 const ISSUES_URL = 'https://github.com/ethanz-code/hermes-codex-theme/issues'
 
-// ─── 偏好（阅读栏宽度），注册时与设置页共用 ──────────────────────────────────
+// ─── 偏好（阅读宽度 / 内容间距），注册时与设置页共用 ─────────────────────────
 // 只动主题级的旋钮；不碰 Hermes 自己的配置项（如 --chat-text-scale 正文缩放、
 // 聊天字体 display.chat_font、界面模式、透明度等），避免与设置互相覆盖。
 
-// 三档阅读栏：窄 768 / 标准 880（默认）/ 宽 992px。标准档是「宽一点才够读」取向。
+// 三档阅读栏：紧凑 768 / 舒适 880（默认）/ 宽松 992px。
+// 旧版 42/46/54rem 偏好按像素就近迁移（旧「宽」864px ≈ 新「舒适」880px 的微调值）。
 const COL_WIDTHS = [
-  { value: '48rem', labelKey: 'narrow' },
-  { value: '55rem', labelKey: 'standard' },
-  { value: '62rem', labelKey: 'wide' }
+  { value: '48rem', labelKey: 'compact' },
+  { value: '55rem', labelKey: 'comfortable' },
+  { value: '62rem', labelKey: 'roomy' }
 ]
 
-const PREF_DEFAULTS = { colWidth: '55rem', language: 'system' }
+// 三档内容间距：紧凑 / 舒适（默认）/ 宽松 —— 行高与段距整档缩放，
+// 见 customCSS 的 html[data-codex-density] 规则。
+const DENSITIES = [
+  { value: 'compact', labelKey: 'compact' },
+  { value: 'comfortable', labelKey: 'comfortable' },
+  { value: 'roomy', labelKey: 'roomy' }
+]
+
+const PREF_DEFAULTS = { colWidth: '55rem', density: 'comfortable', language: 'system' }
 const LANGUAGES = ['system', 'zh', 'en']
 let storage = null
 let pluginOs = null
@@ -56,10 +66,15 @@ function normalizeLanguage(value) {
   return LANGUAGES.includes(value) ? value : PREF_DEFAULTS.language
 }
 
+function normalizeDensity(value) {
+  return DENSITIES.some(o => o.value === value) ? value : PREF_DEFAULTS.density
+}
+
 function getPref(key) {
   const v = storage ? storage.get('prefs', null) : null
   const raw = (v && v[key]) || PREF_DEFAULTS[key]
   if (key === 'colWidth') return normalizeColWidth(raw)
+  if (key === 'density') return normalizeDensity(raw)
   if (key === 'language') return normalizeLanguage(raw)
   return raw
 }
@@ -74,7 +89,9 @@ function setPref(key, value) {
 function applyPrefs(prefs) {
   const stored = prefs || (storage ? storage.get('prefs', null) : null) || {}
   const p = { ...PREF_DEFAULTS, ...stored }
-  document.documentElement.style.setProperty('--composer-width', normalizeColWidth(p.colWidth))
+  const root = document.documentElement
+  root.style.setProperty('--composer-width', normalizeColWidth(p.colWidth))
+  root.dataset.codexDensity = normalizeDensity(p.density)
 }
 
 function openIssues() {
@@ -86,6 +103,9 @@ function openIssues() {
 }
 
 // ─── 双套配色（Codex 基准 + ChatGPT 石墨纸感的灰阶） ─────────────────────────
+// 取值对齐官方 token（apps-sdk-ui / Codex 桌面端内嵌 CSS）：
+// 边框 = 前景 10%（浅）/ 12%（深）；用户气泡 = 前景 5%/8% 无描边；
+// accent 浅 #0285FF / 深 #339CFF，焦点环浅 #0169CC / 深 #0285FF。
 
 const dark = {
   background: '#181818',
@@ -102,9 +122,9 @@ const dark = {
   secondaryForeground: '#e8e8e8',
   accent: '#272727',
   accentForeground: '#ededed',
-  border: '#2e2e2e',
+  border: '#2a2a2a',
   input: '#242424',
-  ring: '#339cff',
+  ring: '#0285ff',
   midground: '#339cff',
   midgroundForeground: '#ffffff',
   composerRing: '#339cff',
@@ -112,8 +132,8 @@ const dark = {
   destructiveForeground: '#ffffff',
   sidebarBackground: '#171717',
   sidebarBorder: '#2a2a2a',
-  userBubble: '#262626',
-  userBubbleBorder: '#2e2e2e'
+  userBubble: '#202020',
+  userBubbleBorder: 'transparent'
 }
 
 const light = {
@@ -125,7 +145,7 @@ const light = {
   mutedForeground: '#6f6f6f',
   popover: '#ffffff',
   popoverForeground: '#1a1a1a',
-  primary: '#0b72d9',
+  primary: '#0285ff',
   primaryForeground: '#ffffff',
   secondary: '#f1f1f1',
   secondaryForeground: '#2c2c2c',
@@ -133,23 +153,23 @@ const light = {
   accentForeground: '#2c2c2c',
   border: '#e7e7e7',
   input: '#f6f6f6',
-  ring: '#0b72d9',
-  midground: '#0b72d9',
+  ring: '#0169cc',
+  midground: '#0285ff',
   midgroundForeground: '#ffffff',
-  composerRing: '#0b72d9',
+  composerRing: '#0285ff',
   destructive: '#c93a36',
   destructiveForeground: '#ffffff',
   sidebarBackground: '#f9f9f9',
-  sidebarBorder: '#ececec',
-  userBubble: '#f4f4f4',
-  userBubbleBorder: '#e7e7e7'
+  sidebarBorder: '#e7e7e7',
+  userBubble: '#f3f3f3',
+  userBubbleBorder: 'transparent'
 }
 
-// ─── 样式基底（圆角体系 / 发丝线 / 间距节奏 / 侧栏） ─────────────────────────
+// ─── 样式基底（圆角刻度 / 发丝线 / 间距节奏 / 弹窗 / 侧栏 / 设置页面板） ────────
 
 const customCSS = `
 /* 阅读栏与字号基线（默认阅读栏 880px；具体值由设置页 --composer-width 覆盖。
-   行高走主题 typography.lineHeight（--dt-line-height: 1.7），此处只管阅读栏。 */
+   行高走主题 typography.line-height（--dt-line-height: 1.7），此处只管阅读栏。 */
 :root {
   --composer-width: 55rem;
   --conversation-text-base-size: 0.9375rem;
@@ -157,18 +177,58 @@ const customCSS = `
   --conversation-tool-base-size: 0.75rem;
   --conversation-caption-base-size: 0.75rem;
   --conversation-caption-base-line-height: 1rem;
+
+  /* 间距档位的基准档（舒适） */
   --paragraph-gap: 0.625rem;
   --turn-block-gap: 1.25rem;
   --tool-row-gap: 0.5rem;
+  --codex-bubble-pad-y: 0.625rem;
+  --codex-bubble-pad-x: 0.875rem;
+  --codex-li-gap: 0.3rem;
+
+  /* 圆角刻度（OpenAI radius-sm/md/lg/xl/3xl） */
+  --codex-radius-inline: 0.25rem;
+  --codex-radius-row: 0.5rem;
+  --codex-radius-control: 0.625rem;
+  --codex-radius-card: 0.75rem;
+  --codex-radius-composer: 1.25rem;
+
+  /* 浮层阴影（elevation + 1px hairline 边） */
+  --codex-shadow-menu: 0 2px 4px -1px rgb(0 0 0 / 0.08), 0 0 0 1px var(--dt-border);
+  --codex-shadow-dialog: 0 8px 16px 0 #00000012, 0 2px 6px 0 #0000000d, 0 0 0 1px var(--dt-border);
+}
+html.dark {
+  --codex-shadow-menu: 0 2px 4px -1px rgb(0 0 0 / 0.2), 0 0 0 1px var(--dt-border);
+  --codex-shadow-dialog: 0 8px 16px 0 #00000059, 0 2px 8px 0 #0003, 0 0 0 1px var(--dt-border);
 }
 
-/* 正文：ChatGPT 式阅读节奏 —— 字重承载层级，行距 1.7（与 --dt-line-height 一致，
-   双保险：消息容器与 .aui-md 都显式声明，防止被内层 leading-* 类覆盖） */
+/* 内容间距档位：紧凑 / 舒适（默认即上方基准）/ 宽松 */
+html[data-codex-density='compact'] {
+  --paragraph-gap: 0.5rem;
+  --turn-block-gap: 0.875rem;
+  --tool-row-gap: 0.375rem;
+  --codex-bubble-pad-y: 0.5rem;
+  --codex-bubble-pad-x: 0.75rem;
+  --codex-li-gap: 0.2rem;
+  --dt-line-height: 1.55 !important;
+}
+html[data-codex-density='roomy'] {
+  --paragraph-gap: 0.875rem;
+  --turn-block-gap: 1.625rem;
+  --tool-row-gap: 0.625rem;
+  --codex-bubble-pad-y: 0.75rem;
+  --codex-bubble-pad-x: 1rem;
+  --codex-li-gap: 0.4rem;
+  --dt-line-height: 1.8 !important;
+}
+
+/* 正文：ChatGPT 式阅读节奏 —— 字重承载层级，行距随间距档位（与 --dt-line-height
+   一致，双保险：消息容器与 .aui-md 都显式声明，防止被内层 leading-* 类覆盖） */
 [data-slot='aui_assistant-message-content'] {
-  line-height: 1.7;
+  line-height: var(--dt-line-height);
 }
 [data-slot='aui_assistant-message-content'] .aui-md {
-  line-height: 1.7;
+  line-height: var(--dt-line-height);
 }
 [data-slot='aui_assistant-message-content'] .aui-md :where(h1, h2, h3, h4) {
   font-weight: 600;
@@ -180,24 +240,24 @@ const customCSS = `
   margin-block: var(--paragraph-gap) 0;
 }
 
-/* 用户气泡：ChatGPT 式信息块 —— 12px 圆角、发丝线、无阴影 */
+/* 用户气泡：前景 5%（浅 #f3f3f3 / 深 #202020）、12px 圆角、无描边无阴影 */
 .composer-human-message {
-  border-radius: 0.75rem;
-  padding: 0.625rem 0.875rem;
+  border-radius: var(--codex-radius-card);
+  padding: var(--codex-bubble-pad-y) var(--codex-bubble-pad-x);
   box-shadow: none;
-  border: 1px solid var(--dt-user-bubble-border);
-  line-height: 1.7;
+  border: none;
+  line-height: var(--dt-line-height);
 }
 
-/* 代码块 / 代码卡片：10px 圆角 */
+/* 代码块 / 代码卡片：卡片 12px 圆角 */
 [data-slot='code-card'],
 [data-slot='aui_user-fence'],
 [data-slot='aui_assistant-message-content'] .aui-md [data-streamdown='code-block'] {
-  border-radius: 0.625rem;
+  border-radius: var(--codex-radius-card);
 }
 [data-slot='aui_assistant-message-content'] .aui-md :where(:not(pre) > code),
 [data-slot='aui_user-inline-code'] {
-  border-radius: 0.1875rem;
+  border-radius: var(--codex-radius-inline);
   padding: 0.08em 0.3em;
   font-size: 0.88em;
   border: none;
@@ -228,7 +288,7 @@ const customCSS = `
 [data-conversation-scaffold] code {
   background: color-mix(in srgb, var(--theme-foreground) 6%, transparent);
   padding: 0.05em 0.35em;
-  border-radius: 0.25rem;
+  border-radius: var(--codex-radius-inline);
 }
 [data-slot='aui_turn-duration'] {
   font-size: var(--conversation-caption-font-size);
@@ -241,7 +301,7 @@ const customCSS = `
   padding-left: 1.35em;
 }
 [data-slot='aui_assistant-message-content'] .aui-md :where(li) {
-  margin-block: 0.3rem;
+  margin-block: var(--codex-li-gap);
 }
 [data-slot='aui_assistant-message-content'] .aui-md :where(li > ul, li > ol) {
   margin-block: 0.125rem;
@@ -279,28 +339,132 @@ const customCSS = `
   background: color-mix(in srgb, var(--theme-midground) 22%, transparent);
 }
 
-/* 输入区：16px 圆角卡片、发丝线、弱阴影 */
+/* 输入区：20px 圆角卡片、发丝线、无阴影 */
 [data-slot='composer-surface'] {
-  border-radius: 1rem;
+  border-radius: var(--codex-radius-composer);
   box-shadow: none;
   border: 1px solid var(--dt-border);
 }
 
+/* ── 弹窗 / 浮层：统一 12px 圆角、统一边框线、elevation 阴影、Codex 遮罩 ── */
+[data-slot='dialog-overlay'] {
+  background: rgba(0, 0, 0, 0.3);
+}
+html.dark [data-slot='dialog-overlay'] {
+  background: rgba(0, 0, 0, 0.5);
+}
+[data-slot='dialog-content'] {
+  border-radius: var(--codex-radius-card);
+  border: 1px solid var(--dt-border);
+  box-shadow: var(--codex-shadow-dialog);
+}
+[data-slot='dropdown-menu-content'],
+[data-slot='dropdown-menu-sub-content'],
+[data-slot='context-menu-content'],
+[data-slot='context-menu-sub-content'],
+[data-slot='select-content'],
+[data-slot='popover-content'],
+[data-slot='command'] {
+  border-radius: var(--codex-radius-card);
+  border: 1px solid var(--dt-border);
+  box-shadow: var(--codex-shadow-menu);
+}
+[data-slot='dropdown-menu-item'],
+[data-slot='dropdown-menu-checkbox-item'],
+[data-slot='dropdown-menu-radio-item'],
+[data-slot='context-menu-item'],
+[data-slot='context-menu-checkbox-item'],
+[data-slot='select-item'],
+[data-slot='command-item'] {
+  border-radius: 0.375rem;
+}
+[data-slot='tooltip-content'] {
+  border-radius: var(--codex-radius-row);
+}
+
 /* ── 左侧侧边栏（ChatGPT 式：行 8px 圆角、hover 淡灰、发丝分隔） ── */
-[data-tour='sessions-sidebar'] :is(.bg-\\\\(--ui-row-active-background\\\\), .bg-\\\\(--ui-row-open-background\\\\)),
+[data-tour='sessions-sidebar'] :is(.bg-\\\\\\\\(--ui-row-active-background\\\\\\\\), .bg-\\\\\\\\(--ui-row-open-background\\\\\\\\)),
 [data-tour='sessions-sidebar'] :is([class*='ui-row-active-background'], [class*='ui-row-open-background']) {
-  border-radius: 0.5rem;
+  border-radius: var(--codex-radius-row);
 }
 [data-tour='sessions-sidebar'] button:not([data-row-actions] button) {
-  border-radius: 0.5rem;
+  border-radius: var(--codex-radius-row);
 }
 [data-tour='sessions-sidebar'] [data-working='true'],
 .arc-border.arc-row {
-  border-radius: 0.5rem;
+  border-radius: var(--codex-radius-row);
 }
 :root {
   --ui-row-active-background: color-mix(in srgb, var(--theme-foreground) 7%, transparent);
   --ui-row-open-background: color-mix(in srgb, var(--theme-foreground) 4%, transparent);
+}
+
+/* ── 插件设置页：Codex 面板卡片（标题卡 + 分组面板 + 发丝分隔行） ── */
+.codex-settings {
+  display: grid;
+  gap: 16px;
+  max-width: 640px;
+}
+.codex-settings-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 4px 2px 0;
+}
+.codex-settings-header-main {
+  min-width: 0;
+  flex: 1;
+}
+.codex-settings-title {
+  font-size: 15px;
+  font-weight: 600;
+  color: var(--ui-text-primary);
+}
+.codex-settings-status {
+  font-size: 12px;
+  color: var(--ui-text-tertiary);
+  margin-top: 4px;
+}
+.codex-settings-panel {
+  border: 1px solid var(--dt-border);
+  border-radius: var(--codex-radius-card);
+  background: var(--dt-card);
+  overflow: hidden;
+}
+.codex-settings-panel-title {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--ui-text-tertiary);
+  padding: 12px 16px 6px;
+}
+.codex-settings-row {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  padding: 12px 16px;
+}
+.codex-settings-row + .codex-settings-row {
+  border-top: 1px solid var(--dt-border);
+}
+.codex-settings-row-main {
+  flex: 1;
+  min-width: 0;
+}
+.codex-settings-row-title {
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--ui-text-primary);
+}
+.codex-settings-row-hint {
+  font-size: 12px;
+  line-height: 1.5;
+  color: var(--ui-text-tertiary);
+  margin-top: 3px;
+}
+.codex-settings-row-action {
+  flex-shrink: 0;
+  white-space: nowrap;
 }
 `
 
@@ -314,6 +478,7 @@ const codexTheme = {
     fontMono: "ui-monospace, 'SF Mono', SFMono-Regular, Menlo, Monaco, Consolas, 'Liberation Mono', monospace",
     // 根行高（画到 --dt-line-height）：正文、消息内容、界面文字统一的行距基线。
     // 这是主题唯一的行高旋钮——之前没设，正文一直在吃 app 默认 1.5。
+    // 「内容间距」档位会按 html[data-codex-density] 覆盖此值。
     lineHeight: '1.7'
   },
   customCSS
@@ -333,16 +498,21 @@ const LOCALES = {
     status: name => `Active: ${name} · dual palette (light/dark), design language after OpenAI Codex & ChatGPT`,
     reapply: 'Reapply',
     reapplied: 'Codex theme reapplied',
-    modeLabel: 'Appearance',
+    panelAppearance: 'Appearance',
+    modeLabel: 'Appearance mode',
     modeHint: '“Follow system” switches light/dark with the macOS appearance. Text size stays under Settings → Appearance.',
     followSystem: 'Follow system',
     dark: 'Dark',
     light: 'Light',
-    widthLabel: 'Reading column',
-    widthHint: 'Prose column width — Narrow 768px · Standard 880px · Wide 992px (ChatGPT uses 720–768px).',
-    narrow: 'Narrow',
-    standard: 'Standard',
-    wide: 'Wide',
+    panelTypography: 'Typography & layout',
+    widthLabel: 'Reading width',
+    widthHint: 'Prose column width — Compact 768px · Comfortable 880px · Roomy 992px (ChatGPT uses 720–768px).',
+    densityLabel: 'Content spacing',
+    densityHint: 'Line height and paragraph rhythm — Compact 1.55 · Comfortable 1.7 (default) · Roomy 1.8.',
+    compact: 'Compact',
+    comfortable: 'Comfortable',
+    roomy: 'Roomy',
+    panelGeneral: 'General',
     languageLabel: 'Language',
     languageHint: 'Language for this plugin’s UI (settings, palette, popups) — follows the system & app language by default, or pin it below.',
     langZh: '中文',
@@ -360,16 +530,22 @@ const LOCALES = {
     status: name => `当前生效：${name} · 亮暗双套，设计语言学自 OpenAI Codex 与 ChatGPT`,
     reapply: '重新应用',
     reapplied: 'Codex 主题已重新应用',
+    panelAppearance: '外观',
     modeLabel: '亮暗模式',
     modeHint: '「跟随系统」自动跟随 macOS 外观。正文字号沿用「外观」设置，此处不覆盖。',
     followSystem: '跟随系统',
     dark: '深色',
     light: '浅色',
-    widthLabel: '阅读栏宽度',
-    widthHint: '正文列宽 —— 窄 768px · 标准 880px · 宽 992px（ChatGPT 为 720–768px）。',
-    narrow: '窄',
-    standard: '标准',
-    wide: '宽',
+    panelTypography: '排版与布局',
+    widthLabel: '阅读宽度',
+    widthHint: '正文列宽 —— 紧凑 768px · 舒适 880px · 宽松 992px（ChatGPT 为 720–768px）。',
+    densityLabel: '内容间距',
+    densityHint: '行距与段落节奏 —— 紧凑 1.55 · 舒适 1.7（默认）· 宽松 1.8。',
+    compact: '紧凑',
+    comfortable: '舒适',
+    roomy: '宽松'
+,
+    panelGeneral: '通用',
     languageLabel: '语言',
     languageHint: '本插件界面（设置页、⌘K、弹窗）的显示语言 —— 默认跟随系统与应用语言，也可固定为中文或英文。',
     langZh: '中文',
@@ -377,6 +553,7 @@ const LOCALES = {
     feedbackLabel: '反馈问题',
     feedbackHint: '遇到问题或有功能建议？到 GitHub Issues 反馈。',
     feedbackAction: '打开 GitHub Issues'
+
   }
 }
 
@@ -400,11 +577,38 @@ function buildTheme(t) {
   return { ...codexTheme, label: t('themeLabel'), description: t('themeDescription') }
 }
 
+function SettingsRow({ title, hint, control }) {
+  return jsxs('div', {
+    className: 'codex-settings-row',
+    children: [
+      jsxs('div', {
+        className: 'codex-settings-row-main',
+        children: [
+          jsx('div', { className: 'codex-settings-row-title', children: title }),
+          jsx('div', { className: 'codex-settings-row-hint', children: hint })
+        ]
+      }),
+      jsx('div', { className: 'codex-settings-row-action', children: control })
+    ]
+  })
+}
+
+function SettingsPanel({ title, rows }) {
+  return jsxs('section', {
+    className: 'codex-settings-panel',
+    children: [
+      jsx('div', { className: 'codex-settings-panel-title', children: title }),
+      ...rows
+    ]
+  })
+}
+
 function SettingsPage() {
   const t = makeT(usePluginI18n(ID))
   const { mode, setMode, themeName } = useTheme()
   const [colWidth, setColWidth] = useState(() => getPref('colWidth'))
   const [language, setLanguage] = useState(() => getPref('language'))
+  const [density, setDensity] = useState(() => getPref('density'))
 
   const pickWidth = value => {
     setPref('colWidth', value)
@@ -416,91 +620,115 @@ function SettingsPage() {
     setLanguage(value)
   }
 
+  const pickDensity = value => {
+    setPref('density', value)
+    setDensity(value)
+  }
+
   return jsxs('div', {
-    style: { display: 'grid', gap: 2, maxWidth: 560 },
+    className: 'codex-settings',
     children: [
       jsxs('div', {
-        style: {
-          display: 'flex',
-          alignItems: 'center',
-          justifyContent: 'space-between',
-          gap: 12,
-          padding: '4px 0 10px'
-        },
+        className: 'codex-settings-header',
         children: [
           jsxs('div', {
-            style: { minWidth: 0, flex: 1 },
+            className: 'codex-settings-header-main',
             children: [
-              jsx('div', {
-                style: { fontSize: 14, fontWeight: 500, color: 'var(--ui-text-primary)' },
-                children: t('title')
-              }),
-              jsx('div', {
-                style: { fontSize: 12, color: 'var(--ui-text-tertiary)', marginTop: 4 },
-                children: t('status', themeName)
-              })
+              jsx('div', { className: 'codex-settings-title', children: t('title') }),
+              jsx('div', { className: 'codex-settings-status', children: t('status', themeName) })
             ]
           }),
-          jsx(Button, {
-            variant: 'outline',
-            size: 'sm',
-            onClick: () => {
-              requestTheme('codex')
-              applyPrefs()
-              host.notify({ kind: 'info', message: t('reapplied') })
-            },
-            children: t('reapply')
+          jsx('div', {
+            className: 'codex-settings-row-action',
+            children: jsx(Button, {
+              variant: 'outline',
+              size: 'sm',
+              onClick: () => {
+                requestTheme('codex')
+                applyPrefs()
+                host.notify({ kind: 'info', message: t('reapplied') })
+              },
+              children: t('reapply')
+            })
           })
         ]
       }),
 
-      jsx(ListRow, {
-        title: t('modeLabel'),
-        description: t('modeHint'),
-        action: jsx(SegmentedControl, {
-          value: mode,
-          onChange: v => setMode(v),
-          options: [
-            { id: 'system', label: t('followSystem') },
-            { id: 'dark', label: t('dark') },
-            { id: 'light', label: t('light') }
-          ]
-        })
+      jsx(SettingsPanel, {
+        title: t('panelAppearance'),
+        rows: [
+          jsx(SettingsRow, {
+            key: 'mode',
+            title: t('modeLabel'),
+            hint: t('modeHint'),
+            control: jsx(SegmentedControl, {
+              value: mode,
+              onChange: v => setMode(v),
+              options: [
+                { id: 'system', label: t('followSystem') },
+                { id: 'dark', label: t('dark') },
+                { id: 'light', label: t('light') }
+              ]
+            })
+          })
+        ]
       }),
 
-      jsx(ListRow, {
-        title: t('widthLabel'),
-        description: t('widthHint'),
-        action: jsx(SegmentedControl, {
-          value: colWidth,
-          onChange: pickWidth,
-          options: COL_WIDTHS.map(o => ({ id: o.value, label: t(o.labelKey) }))
-        })
+      jsx(SettingsPanel, {
+        title: t('panelTypography'),
+        rows: [
+          jsx(SettingsRow, {
+            key: 'width',
+            title: t('widthLabel'),
+            hint: t('widthHint'),
+            control: jsx(SegmentedControl, {
+              value: colWidth,
+              onChange: pickWidth,
+              options: COL_WIDTHS.map(o => ({ id: o.value, label: t(o.labelKey) }))
+            })
+          }),
+          jsx(SettingsRow, {
+            key: 'density',
+            title: t('densityLabel'),
+            hint: t('densityHint'),
+            control: jsx(SegmentedControl, {
+              value: density,
+              onChange: pickDensity,
+              options: DENSITIES.map(o => ({ id: o.value, label: t(o.labelKey) }))
+            })
+          })
+        ]
       }),
 
-      jsx(ListRow, {
-        title: t('languageLabel'),
-        description: t('languageHint'),
-        action: jsx(SegmentedControl, {
-          value: language,
-          onChange: pickLanguage,
-          options: [
-            { id: 'system', label: t('followSystem') },
-            { id: 'zh', label: t('langZh') },
-            { id: 'en', label: t('langEn') }
-          ]
-        })
-      }),
-
-      jsx(ListRow, {
-        title: t('feedbackLabel'),
-        description: t('feedbackHint'),
-        action: jsx(Button, {
-          variant: 'outline',
-          size: 'sm',
-          onClick: openIssues,
-          children: t('feedbackAction')
-        })
+      jsx(SettingsPanel, {
+        title: t('panelGeneral'),
+        rows: [
+          jsx(SettingsRow, {
+            key: 'language',
+            title: t('languageLabel'),
+            hint: t('languageHint'),
+            control: jsx(SegmentedControl, {
+              value: language,
+              onChange: pickLanguage,
+              options: [
+                { id: 'system', label: t('followSystem') },
+                { id: 'zh', label: t('langZh') },
+                { id: 'en', label: t('langEn') }
+              ]
+            })
+          }),
+          jsx(SettingsRow, {
+            key: 'feedback',
+            title: t('feedbackLabel'),
+            hint: t('feedbackHint'),
+            control: jsx(Button, {
+              variant: 'outline',
+              size: 'sm',
+              onClick: openIssues,
+              children: t('feedbackAction')
+            })
+          })
+        ]
       })
     ]
   })
