@@ -616,10 +616,10 @@ html[data-codex-composer-drag] :is(*, *::before, *::after) {
   user-select: none !important;
 }
 
-/* 拖动抬起态：与弹窗 elevation 同一语言（旧版本线缺 token 时用等价弱阴影） */
+/* 拖动态抬升：用纯 elevation 的 --codex-shadow-composer-focus（与聚焦态同一语言；
+   --codex-shadow-dialog 尾层带 1px ring，会与 1px 实边框叠成双发丝线） */
 html[data-codex-composer-drag] [data-slot='composer-surface'] {
-  box-shadow:
-    var(--codex-shadow-dialog, 0 12px 32px color-mix(in srgb, var(--theme-foreground) 18%, transparent)) !important;
+  box-shadow: var(--codex-shadow-composer-focus) !important;
 }
 `
 
@@ -955,6 +955,8 @@ function SettingsPage() {
 const DRAG_HANDLE_ZONE_PX = 12
 const DRAG_THRESHOLD_PX = 3
 const DRAG_CLICK_SWALLOW_MS = 400
+const DRAG_CLICK_REPLAY_MS = 250
+const DRAG_SWALLOW_RADIUS_PX = 32
 const DRAG_POS_KEY = 'composerDragPositions'
 const DRAG_POS_CAP = 12
 const DRAG_STYLE_ID = 'codex-theme-composer-drag'
@@ -973,6 +975,10 @@ const DRAG_MECHANICS =
 
 let dragSession = null
 let dragSwallowClicksUntil = 0
+let dragSwallowPoint = null
+let dragGripClickTimer = null
+let dragGripClickEl = null
+let dragReplayingClick = false
 
 const dragClamp = (value, lo, hi) => Math.min(Math.max(value, lo), Math.max(lo, hi))
 
@@ -1117,6 +1123,7 @@ function dragSchedule(session) {
 function dragOnPointerDown(event) {
   const target = dragFindTarget(event)
   if (!target) return
+  dragCancelGripClick()
   const rect = target.dock.getBoundingClientRect()
   if (rect.width <= 0 || rect.height <= 0) return
   dragSession = {
@@ -1161,16 +1168,26 @@ function dragEnd(event) {
   }
   dragFlush(session)
   dragSession = null
-  dragSwallowClicksUntil = 0
   document.documentElement.removeAttribute('data-codex-composer-drag')
-  if (session.moved) {
-    // 位移过的按下收尾必带一次 click（落在把手上会误触抽屉开关）——吞掉；
-    // 时间窗兜底「没派发 click」的路径，绝不误伤之后的正常点击。
+  if (session.moved && event && event.type === 'pointerup') {
+    // 位移过的按下收尾必带一次 click（落在把手上会误触抽屉开关）——吞掉。
+    // 只有真正的 pointerup 才会派发收尾 click：pointercancel / blur / capture
+    // 元素卸载这三条路径不带 click，不开吞噬窗（否则误吞用户随后的真实点击）。
+    // 吞噬范围另收紧到把手区/松手坐标附近，见 dragInSwallowRegion。
     dragSwallowClicksUntil = performance.now() + DRAG_CLICK_SWALLOW_MS
+    dragSwallowPoint = { x: event.clientX, y: event.clientY }
+  } else {
+    dragSwallowClicksUntil = 0
+    dragSwallowPoint = null
+  }
+  if (session.moved) {
     // 存渲染态的最终落点（clamp 后），恢复后与松手时逐像素一致。
+    // 换算与 dragFlush 同用 dragViewport()（布局视口）：window.innerWidth 含
+    // 滚动条宽，混用会把落点整体偏移一个滚动条宽并写进持久化。
     const rect = session.dock.getBoundingClientRect()
+    const vp = dragViewport()
     const placement = dragClampPlacement(
-      { bottom: window.innerHeight - rect.bottom, right: window.innerWidth - rect.right, width: rect.width },
+      { bottom: vp.height - rect.bottom, right: vp.width - rect.right, width: rect.width },
       rect.height
     )
     dragApply(session.dock, placement)
@@ -1180,16 +1197,66 @@ function dragEnd(event) {
   if (el?.hasPointerCapture?.(session.pointerId)) el.releasePointerCapture(session.pointerId)
 }
 
+// 吞噬范围：把手区（收尾 click 被 pointer capture 定向到这里）或松手坐标 32px 内。
+// 范围外的点击是用户真实点击，一律放行。
+function dragInSwallowRegion(event) {
+  const el = event.target instanceof Element ? event.target : null
+  if (el && el.closest(DRAG_GRIP_SELECTOR)) return true
+  const p = dragSwallowPoint
+  return (
+    !!p &&
+    Math.abs(event.clientX - p.x) <= DRAG_SWALLOW_RADIUS_PX &&
+    Math.abs(event.clientY - p.y) <= DRAG_SWALLOW_RADIUS_PX
+  )
+}
+
+function dragScheduleGripClick(grip) {
+  clearTimeout(dragGripClickTimer)
+  dragGripClickEl = grip
+  dragGripClickTimer = setTimeout(() => {
+    dragGripClickTimer = null
+    const el = dragGripClickEl
+    dragGripClickEl = null
+    if (!el || !el.isConnected) return
+    dragReplayingClick = true
+    try {
+      el.click()
+    } finally {
+      dragReplayingClick = false
+    }
+  }, DRAG_CLICK_REPLAY_MS)
+}
+
+function dragCancelGripClick() {
+  clearTimeout(dragGripClickTimer)
+  dragGripClickTimer = null
+  dragGripClickEl = null
+}
+
 function dragOnClickCapture(event) {
-  if (performance.now() >= dragSwallowClicksUntil) return
-  dragSwallowClicksUntil = 0
+  if (performance.now() < dragSwallowClicksUntil) {
+    if (!dragInSwallowRegion(event)) return
+    dragSwallowClicksUntil = 0
+    dragSwallowPoint = null
+    event.preventDefault()
+    event.stopPropagation()
+    return
+  }
+  if (dragReplayingClick) return
+  const el = event.target instanceof Element ? event.target : null
+  const grip = el && typeof el.closest === 'function' ? el.closest(DRAG_GRIP_SELECTOR) : null
+  if (!grip) return
+  // 把手「单击开关」延迟 250ms 放行：双击回坞的第二击紧随其后，dblclick 一到
+  // 就撤销（dragCancelGripClick），避免单击开关被连发两次造成开-关闪烁。
   event.preventDefault()
   event.stopPropagation()
+  dragScheduleGripClick(grip)
 }
 
 function dragOnDoubleClick(event) {
   const target = dragFindTarget(event)
   if (!target) return
+  dragCancelGripClick()
   dragClear(target.dock)
   dragForgetPosition(dragAnchor(target.dock))
 }
@@ -1208,6 +1275,7 @@ function installComposerDrag(ctx) {
   dragRenderRules()
 
   ctx.onDispose(() => {
+    dragCancelGripClick()
     dragEnd(null)
     document.getElementById(DRAG_STYLE_ID)?.remove()
   })
