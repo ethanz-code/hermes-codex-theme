@@ -238,6 +238,10 @@ const customCSS = `
   --codex-bubble-pad-x: 0.875rem;
   --codex-li-gap: 0.3rem;
 
+  /* 输入区内边距（ChatGPT 式密度：横向 12px / 纵向 8px；不随间距档位缩放） */
+  --composer-surface-pad-x: 0.75rem;
+  --composer-surface-pad-y: 0.5rem;
+
   /* 圆角刻度（OpenAI radius-sm/md/lg/xl/3xl） */
   --codex-radius-inline: 0.25rem;
   --codex-radius-row: 0.5rem;
@@ -245,13 +249,18 @@ const customCSS = `
   --codex-radius-card: 0.75rem;
   --codex-radius-composer: 1.25rem;
 
-  /* 浮层阴影（elevation + 1px hairline 边） */
+  /* 浮层阴影（elevation + 1px hairline 边）；输入区阴影为纯 elevation，
+     发丝线由 border 承担，不叠 1px ring（避免双描边） */
   --codex-shadow-menu: 0 2px 4px -1px rgb(0 0 0 / 0.08), 0 0 0 1px var(--dt-border);
   --codex-shadow-dialog: 0 8px 16px 0 #00000012, 0 2px 6px 0 #0000000d, 0 0 0 1px var(--dt-border);
+  --codex-shadow-composer: 0 1px 2px 0 rgb(0 0 0 / 0.04), 0 6px 16px -4px rgb(0 0 0 / 0.08);
+  --codex-shadow-composer-focus: 0 2px 4px 0 rgb(0 0 0 / 0.06), 0 10px 24px -6px rgb(0 0 0 / 0.12);
 }
 html.dark {
   --codex-shadow-menu: 0 2px 4px -1px rgb(0 0 0 / 0.2), 0 0 0 1px var(--dt-border);
   --codex-shadow-dialog: 0 8px 16px 0 #00000059, 0 2px 8px 0 #0003, 0 0 0 1px var(--dt-border);
+  --codex-shadow-composer: 0 1px 2px 0 rgb(0 0 0 / 0.4), 0 6px 16px -4px rgb(0 0 0 / 0.45);
+  --codex-shadow-composer-focus: 0 2px 4px 0 rgb(0 0 0 / 0.5), 0 10px 24px -6px rgb(0 0 0 / 0.55);
 }
 
 /* 内容间距档位：紧凑 / 舒适（默认即上方基准）/ 宽松 */
@@ -427,11 +436,30 @@ html.dark [data-slot='aui_user-message-root'] [data-slot='aui_user-bubble-action
   background: color-mix(in srgb, var(--theme-midground) 22%, transparent);
 }
 
-/* 输入区：20px 圆角卡片、发丝线、无阴影 */
-[data-slot='composer-surface'] {
+/* 输入区：ChatGPT 式圆角卡片 —— 20px 圆角、发丝线（与弹窗同款 1px --dt-border）、
+   柔和 elevation；hover 描边微深、聚焦描边加深 + 阴影抬升。两个坑：
+   1) app styles.css 用 border-color: var(--ui-stroke-secondary) !important 压掉一切
+      普通描边色，改色必须同带 !important；选择器前缀 html 把特异性抬到 0,1,1，
+      压过 app 的 0,1,0，不依赖注入顺序。
+   2) surface 自带 transition-opacity（拖放淡出），transition 列表必须保留 opacity。 */
+html [data-slot='composer-surface'] {
   border-radius: var(--codex-radius-composer);
-  box-shadow: none;
-  border: 1px solid var(--dt-border);
+  border: 1px solid var(--dt-border) !important;
+  box-shadow: var(--codex-shadow-composer);
+  transition: border-color 150ms ease, box-shadow 150ms ease, opacity 150ms ease-out;
+}
+html [data-slot='composer-surface']:hover {
+  border-color: color-mix(in srgb, var(--theme-foreground) 16%, var(--dt-border)) !important;
+}
+html [data-slot='composer-surface']:focus-within {
+  border-color: color-mix(in srgb, var(--theme-foreground) 28%, var(--dt-border)) !important;
+  box-shadow: var(--codex-shadow-composer-focus);
+}
+
+/* 占位符：前景 50% 中性灰（ChatGPT 式弱提示，暗色下保住可读性）。app 同选择器带
+   !important 的 --ui-text-tertiary 会压掉主题色，此处以 !important + html 前缀特异性反压。 */
+html [data-slot='composer-rich-input']:is(:empty, [data-empty])::before {
+  color: color-mix(in srgb, var(--theme-foreground) 50%, transparent) !important;
 }
 
 /* ── 弹窗 / 浮层：统一 12px 圆角、统一边框线、elevation 阴影、Codex 遮罩 ── */
