@@ -223,6 +223,7 @@ const customCSS = `
    行高走主题 typography.line-height（--dt-line-height: 1.7），此处只管阅读栏。 */
 :root {
   --composer-width: 55rem;
+  --dt-user-bubble-max-width: 78%;
   --conversation-text-base-size: 0.9375rem;
   --conversation-base-line-height: 1.5rem;
   --conversation-tool-base-size: 0.75rem;
@@ -296,8 +297,44 @@ html[data-codex-density='roomy'] {
   border-radius: var(--codex-radius-card);
   padding: var(--codex-bubble-pad-y) var(--codex-bubble-pad-x);
   box-shadow: none;
-  border: none;
   line-height: var(--dt-line-height);
+}
+
+/* 用户气泡宽度：贴合内容、右对齐（发送方），上限 --dt-user-bubble-max-width 后换行。
+   作用域必须落在 [data-slot='aui_user-bubble-actions'] —— 编辑态输入框复用同一个
+   .composer-human-message class（app 内 ui-prompt-input__container），不能一起收缩；
+   后代选择器把特异性抬到 0,2,0，压过气泡链上的 w-full / max-w-full（不依赖注入顺序）。
+   overflow-wrap: anywhere 兜底超长无空格串（内层文本自带 wrap-anywhere，此处双保险）。 */
+[data-slot='aui_user-message-root'] [data-slot='aui_user-bubble-actions'] {
+  width: fit-content;
+  max-width: var(--dt-user-bubble-max-width, 78%);
+  margin-left: auto;
+  overflow-wrap: anywhere;
+}
+
+/* 气泡本体只贴自身文本：分支线程的 checkpoint 行（restore/1/2/next）比短文本宽时，
+   外层 fit-content 会被该行撑宽，短气泡跟着变宽；对气泡 button 再收缩一次并右对齐，
+   hover 操作按钮（absolute right-2 bottom-2）仍贴气泡右下角。
+   --human-msg-line-height 就近覆盖 app 在 message-root 上的 1.3：sticky 4 行截断的
+   max-height 按 4 * --human-msg-line-height * 字号计算，须与气泡实际行高一致。 */
+[data-slot='aui_user-message-root'] [data-slot='aui_user-bubble-actions'] .composer-human-message {
+  border: none;
+  width: fit-content;
+  margin-left: auto;
+  --human-msg-line-height: var(--dt-line-height);
+}
+
+/* 用户气泡底色：调研取前景 5%（浅 #f3f3f3 / 深 #202020）。两个坑：
+   1) 浅色下 --theme-mix-bubble 为 0%，气泡链路（--theme-bubble-seed →
+      --ui-chat-bubble-background）只吃 --theme-neutral-card #fcfcfc，主题 userBubble
+      被丢弃；2) --dt-user-bubble 在 :root 定义、var() 在定义处替换，下游改
+      --ui-chat-bubble-background 不传导。故直接在气泡作用域覆盖 --dt-user-bubble，
+      并保留 --user-bubble-keep（气泡透明度设置）的合成。 */
+[data-slot='aui_user-message-root'] [data-slot='aui_user-bubble-actions'] {
+  --dt-user-bubble: color-mix(in srgb, #f3f3f3 var(--user-bubble-keep, 100%), transparent);
+}
+html.dark [data-slot='aui_user-message-root'] [data-slot='aui_user-bubble-actions'] {
+  --dt-user-bubble: color-mix(in srgb, #202020 var(--user-bubble-keep, 100%), transparent);
 }
 
 /* 代码块 / 代码卡片：卡片 12px 圆角 */
