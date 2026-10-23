@@ -587,6 +587,40 @@ html.dark [data-slot='dialog-overlay'] {
    <html> 内联样式上，这里用 !important 的档位规则压过内联值；「默认」档无规则，
    走主题/应用原值。规则由 TEXT_FONTS / CODE_FONTS 生成。 */
 ${FONT_PRESET_RULES}
+
+/* ── 输入对话框拖拽（弹窗式移动；行为 JS 见「输入对话框拖拽」段）────────────
+   data-codex-float：脱坞后的 fixed 定位 —— bottom/right 内缩 + 冻结宽度，
+   与 app pop-out 同一套落点语义（草稿长高向上扩，落点不漂移）。
+   :not([data-popped-out]) 把 app 自己的弹出态整段让位，两套定位永不叠加。 */
+[data-slot='composer-dock'][data-codex-float]:not([data-popped-out]) {
+  position: fixed;
+  left: auto;
+  translate: none;
+  right: clamp(8px, var(--codex-float-right), calc(100vw - var(--codex-float-width) - 8px));
+  bottom: clamp(8px, var(--codex-float-bottom), calc(100vh - var(--composer-measured-height, 4.5rem) - 8px));
+  width: var(--codex-float-width);
+  max-width: calc(100vw - 1rem);
+}
+
+/* 把手：顶缘 grip 按钮即拖动把手（单击仍是状态抽屉开关，按住拖动才移动） */
+[data-slot='status-drawer-toggle'] {
+  cursor: grab;
+}
+
+/* 拖动中：全局 grabbing 光标 + 禁选，避免拖过输入区拉出文本选区 */
+html[data-codex-composer-drag],
+html[data-codex-composer-drag] :is(*, *::before, *::after) {
+  cursor: grabbing;
+}
+html[data-codex-composer-drag] :is(*, *::before, *::after) {
+  user-select: none !important;
+}
+
+/* 拖动抬起态：与弹窗 elevation 同一语言（旧版本线缺 token 时用等价弱阴影） */
+html[data-codex-composer-drag] [data-slot='composer-surface'] {
+  box-shadow:
+    var(--codex-shadow-dialog, 0 12px 32px color-mix(in srgb, var(--theme-foreground) 18%, transparent)) !important;
+}
 `
 
 const codexTheme = {
@@ -904,6 +938,281 @@ function SettingsPage() {
   })
 }
 
+// ─── 输入对话框拖拽（弹窗式移动）────────────────────────────────────────────
+// 把手 = 对话框顶缘（grip 按钮 + 顶条 24px 带），按住拖动整个 composer-dock。
+// 与 app 自带 pop-out 手势分区共存：app 的 5px 抓取环只暴露在左右两条边，且
+// 其 pointerdown 对 button 一律让行；弹出态（data-popped-out）与 HUD 壳（自带
+// 窗口级拖拽）完全不接管。定位语义与 app pop-out 同款：fixed + bottom/right
+// 内缩（草稿长高向上扩，落点不漂移），双击把手回坞。
+// 三条通道各司其职，全程不扫描、不监听 app DOM：
+//   1) 事件委托：pointerdown 从事件目标 closest 出把手，只认领把手区的按下；
+//   2) 落点写插件自有 CSS 变量 + data-codex-float，边界钳制交给规则里的
+//      clamp() —— 视口实时、高度随 --composer-measured-height 走，换屏/长草稿
+//      都不会溢出视口；
+//   3) 位置保留按面板锚点（data-session-anchor）生成恢复规则，重挂载的
+//      composer 靠 CSS 自己找回落点。落点用完即弃（双击回坞）不留状态。
+
+const DRAG_HANDLE_ZONE_PX = 12
+const DRAG_THRESHOLD_PX = 3
+const DRAG_CLICK_SWALLOW_MS = 400
+const DRAG_POS_KEY = 'composerDragPositions'
+const DRAG_POS_CAP = 12
+const DRAG_STYLE_ID = 'codex-theme-composer-drag'
+const DRAG_GRIP_SELECTOR = '[data-slot="status-drawer-toggle"]'
+const DRAG_INTERACTIVE_SELECTOR =
+  'button, a, input, textarea, select, [contenteditable]:not([contenteditable="false"]), ' +
+  '[data-slot="composer-rich-input"], [role="menuitem"], [data-radix-popper-content-wrapper]'
+
+// 与 customCSS 里 [data-codex-float] 规则同一套声明（含 8px 边距的 clamp），
+// 按锚点生成恢复规则时内联进规则本体，让落点找回不需要任何 JS 接触 DOM。
+const DRAG_MECHANICS =
+  'position:fixed;left:auto;translate:none;' +
+  'right:clamp(8px,var(--codex-float-right),calc(100vw - var(--codex-float-width) - 8px));' +
+  'bottom:clamp(8px,var(--codex-float-bottom),calc(100vh - var(--composer-measured-height,4.5rem) - 8px));' +
+  'width:var(--codex-float-width);max-width:calc(100vw - 1rem);'
+
+let dragSession = null
+let dragSwallowClicksUntil = 0
+
+const dragClamp = (value, lo, hi) => Math.min(Math.max(value, lo), Math.max(lo, hi))
+
+// fixed 定位的包含块是布局视口：right/bottom 内缩必须对 clientWidth/Height
+// 算，window.innerWidth 含滚动条宽度会整段偏移一个滚动条位。
+function dragViewport() {
+  return {
+    height: document.documentElement.clientHeight || window.innerHeight,
+    width: document.documentElement.clientWidth || window.innerWidth
+  }
+}
+
+function dragAnchor(dock) {
+  return dock.closest('[data-chat-surface]')?.dataset.sessionAnchor || null
+}
+
+function dragSavedPositions() {
+  const raw = storage ? storage.get(DRAG_POS_KEY, null) : null
+  return raw && typeof raw === 'object' ? raw : {}
+}
+
+function dragCssString(value) {
+  return String(value).replace(/\\/g, '\\\\').replace(/'/g, "\\'").replace(/\n/g, ' ')
+}
+
+// 恢复规则集整体重渲染：锚点数量个位数，整段替换比逐条增删更不易留脏规则。
+function dragRenderRules() {
+  const rules = Object.entries(dragSavedPositions())
+    .filter(([, p]) => p && [p.bottom, p.right, p.width].every(Number.isFinite))
+    .map(
+      ([anchor, p]) =>
+        `[data-chat-surface][data-session-anchor='${dragCssString(anchor)}'] ` +
+        `[data-slot='composer-dock']:not([data-popped-out]){` +
+        `--codex-float-bottom:${p.bottom}px;--codex-float-right:${p.right}px;--codex-float-width:${p.width}px;` +
+        DRAG_MECHANICS +
+        `}`
+    )
+    .join('\n')
+  const existing = document.getElementById(DRAG_STYLE_ID)
+  if (!existing && !rules) return
+  const el = existing || document.createElement('style')
+  if (!existing) {
+    el.id = DRAG_STYLE_ID
+    document.head.appendChild(el)
+  }
+  if (el.textContent !== rules) el.textContent = rules
+}
+
+function dragSavePosition(anchor, placement) {
+  if (!storage || !anchor) return
+  const all = dragSavedPositions()
+  all[anchor] = { bottom: placement.bottom, right: placement.right, t: Date.now(), width: placement.width }
+  const keys = Object.keys(all)
+  const stale = keys.sort((a, b) => (all[a].t || 0) - (all[b].t || 0)).slice(0, Math.max(0, keys.length - DRAG_POS_CAP))
+  for (const key of stale) delete all[key]
+  storage.set(DRAG_POS_KEY, all)
+  dragRenderRules()
+}
+
+function dragForgetPosition(anchor) {
+  if (!storage || !anchor) return
+  const all = dragSavedPositions()
+  if (!(anchor in all)) return
+  delete all[anchor]
+  storage.set(DRAG_POS_KEY, all)
+  dragRenderRules()
+}
+
+// 落点整盒钳进视口（留白 8px，与 DRAG_MECHANICS 的 clamp 同界）：存的是
+// 渲染态的最终落点，恢复后原样复现。
+function dragClampPlacement(placement, height) {
+  const vp = dragViewport()
+  return {
+    bottom: dragClamp(placement.bottom, 8, vp.height - height - 8),
+    right: dragClamp(placement.right, 8, vp.width - placement.width - 8),
+    width: placement.width
+  }
+}
+
+function dragApply(dock, placement) {
+  dock.style.setProperty('--codex-float-bottom', placement.bottom + 'px')
+  dock.style.setProperty('--codex-float-right', placement.right + 'px')
+  dock.style.setProperty('--codex-float-width', placement.width + 'px')
+  dock.setAttribute('data-codex-float', '')
+}
+
+function dragClear(dock) {
+  dock.removeAttribute('data-codex-float')
+  dock.style.removeProperty('--codex-float-bottom')
+  dock.style.removeProperty('--codex-float-right')
+  dock.style.removeProperty('--codex-float-width')
+}
+
+function dragFindTarget(event) {
+  if (event.button !== 0) return null
+  const el = event.target instanceof Element ? event.target : null
+  if (!el) return null
+  const root = el.closest('[data-slot="composer-root"]')
+  if (!root || root.hasAttribute('data-popped-out')) return null
+  if (root.closest('[data-hud-shell]')) return null
+  const dock = root.closest('[data-slot="composer-dock"]')
+  if (!dock || dock.hasAttribute('data-popped-out')) return null
+  if (!el.closest(DRAG_GRIP_SELECTOR)) {
+    if (el.closest(DRAG_INTERACTIVE_SELECTOR)) return null
+    const rect = root.getBoundingClientRect()
+    if (
+      rect.width <= 0 ||
+      event.clientX < rect.left - 4 ||
+      event.clientX > rect.right + 4 ||
+      event.clientY < rect.top - DRAG_HANDLE_ZONE_PX ||
+      event.clientY > rect.top + DRAG_HANDLE_ZONE_PX
+    ) {
+      return null
+    }
+  }
+  return { dock, root }
+}
+
+function dragFlush(session) {
+  const pending = session.pending
+  if (!pending) return
+  session.pending = null
+  const rect = session.rect
+  const vp = dragViewport()
+  // 原始位移直写：渲染钳制在规则的 clamp() 里做，回拖不带边界粘滞。
+  session.placement = {
+    bottom: vp.height - rect.bottom - pending.dy,
+    right: vp.width - rect.right - pending.dx,
+    width: rect.width
+  }
+  dragApply(session.dock, session.placement)
+}
+
+function dragSchedule(session) {
+  if (session.raf !== null) return
+  session.raf = requestAnimationFrame(() => {
+    session.raf = null
+    dragFlush(session)
+  })
+}
+
+function dragOnPointerDown(event) {
+  const target = dragFindTarget(event)
+  if (!target) return
+  const rect = target.dock.getBoundingClientRect()
+  if (rect.width <= 0 || rect.height <= 0) return
+  dragSession = {
+    captureEl: event.target instanceof Element ? event.target : target.root,
+    dock: target.dock,
+    moved: false,
+    pending: null,
+    placement: null,
+    pointerId: event.pointerId,
+    raf: null,
+    rect,
+    startX: event.clientX,
+    startY: event.clientY
+  }
+  // 把手区的按下整段认领：app 表单上的 pop-out 手势与草稿同步都看不到它，
+  // 单击（无位移）不受影响 —— grip 的开关点击照常走 click。
+  event.stopPropagation()
+  dragSession.captureEl.setPointerCapture?.(event.pointerId)
+}
+
+function dragOnPointerMove(event) {
+  const session = dragSession
+  if (!session || event.pointerId !== session.pointerId) return
+  const dx = event.clientX - session.startX
+  const dy = event.clientY - session.startY
+  if (!session.moved) {
+    if (Math.abs(dx) < DRAG_THRESHOLD_PX && Math.abs(dy) < DRAG_THRESHOLD_PX) return
+    session.moved = true
+    document.documentElement.setAttribute('data-codex-composer-drag', '')
+  }
+  event.preventDefault()
+  session.pending = { dx, dy }
+  dragSchedule(session)
+}
+
+function dragEnd(event) {
+  const session = dragSession
+  if (!session || (event && event.pointerId !== session.pointerId)) return
+  if (session.raf !== null) {
+    cancelAnimationFrame(session.raf)
+    session.raf = null
+  }
+  dragFlush(session)
+  dragSession = null
+  dragSwallowClicksUntil = 0
+  document.documentElement.removeAttribute('data-codex-composer-drag')
+  if (session.moved) {
+    // 位移过的按下收尾必带一次 click（落在把手上会误触抽屉开关）——吞掉；
+    // 时间窗兜底「没派发 click」的路径，绝不误伤之后的正常点击。
+    dragSwallowClicksUntil = performance.now() + DRAG_CLICK_SWALLOW_MS
+    // 存渲染态的最终落点（clamp 后），恢复后与松手时逐像素一致。
+    const rect = session.dock.getBoundingClientRect()
+    const placement = dragClampPlacement(
+      { bottom: window.innerHeight - rect.bottom, right: window.innerWidth - rect.right, width: rect.width },
+      rect.height
+    )
+    dragApply(session.dock, placement)
+    dragSavePosition(dragAnchor(session.dock), placement)
+  }
+  const el = session.captureEl
+  if (el?.hasPointerCapture?.(session.pointerId)) el.releasePointerCapture(session.pointerId)
+}
+
+function dragOnClickCapture(event) {
+  if (performance.now() >= dragSwallowClicksUntil) return
+  dragSwallowClicksUntil = 0
+  event.preventDefault()
+  event.stopPropagation()
+}
+
+function dragOnDoubleClick(event) {
+  const target = dragFindTarget(event)
+  if (!target) return
+  dragClear(target.dock)
+  dragForgetPosition(dragAnchor(target.dock))
+}
+
+function installComposerDrag(ctx) {
+  ctx.addEventListener(document, 'pointerdown', dragOnPointerDown, true)
+  ctx.addEventListener(window, 'pointermove', dragOnPointerMove)
+  ctx.addEventListener(window, 'pointerup', dragEnd)
+  ctx.addEventListener(window, 'pointercancel', dragEnd)
+  ctx.addEventListener(document, 'lostpointercapture', dragEnd, true)
+  ctx.addEventListener(window, 'blur', () => dragEnd(null))
+  ctx.addEventListener(document, 'click', dragOnClickCapture, true)
+  ctx.addEventListener(document, 'dblclick', dragOnDoubleClick, true)
+
+  // 已保存的落点在注册时就渲染成恢复规则：composer 何时挂载都能自己找回。
+  dragRenderRules()
+
+  ctx.onDispose(() => {
+    dragEnd(null)
+    document.getElementById(DRAG_STYLE_ID)?.remove()
+  })
+}
+
 // ─── 插件入口 ─────────────────────────────────────────────────────────────────
 
 export default {
@@ -925,6 +1234,7 @@ export default {
       requestTheme('codex')
     }
     applyPrefs()
+    installComposerDrag(ctx)
 
     // 装载确认（热重载/启动排查的地面真值，见 desktop.log）
     console.log('[codex-theme] register ok v1.1.0')
