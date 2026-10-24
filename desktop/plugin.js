@@ -92,7 +92,7 @@ const DENSITY_RULES = {
   --codex-bubble-pad-y: 0.5rem;
   --codex-bubble-pad-x: 0.75rem;
   --codex-li-gap: 0.2rem;
-  --dt-line-height: 1.55 !important;
+  --dt-line-height: 1.3 !important;
 }`,
   roomy: `:root {
   --paragraph-gap: 0.875rem;
@@ -101,7 +101,7 @@ const DENSITY_RULES = {
   --codex-bubble-pad-y: 0.75rem;
   --codex-bubble-pad-x: 1rem;
   --codex-li-gap: 0.4rem;
-  --dt-line-height: 1.8 !important;
+  --dt-line-height: 1.55 !important;
 }`
 }
 
@@ -280,11 +280,11 @@ const light = {
 
 const customCSSBase = `
 /* 字号与间距基线（阅读栏宽度 --composer-width 随偏好在 customCSS 尾部输出，
-   行高走主题 typography.line-height（--dt-line-height: 1.7），此处只管阅读栏）。 */
+   行高走主题 typography.line-height（--dt-line-height: 1.4286），此处只管阅读栏）。 */
 :root {
   --dt-user-bubble-max-width: 78%;
-  --conversation-text-base-size: 0.9375rem;
-  --conversation-base-line-height: 1.5rem;
+  --conversation-text-base-size: 0.875rem;
+  --conversation-base-line-height: 1.25rem;
   --conversation-tool-base-size: 0.75rem;
   --conversation-caption-base-size: 0.75rem;
   --conversation-caption-base-line-height: 1rem;
@@ -315,6 +315,26 @@ const customCSSBase = `
   --codex-shadow-composer: 0 1px 2px 0 rgb(0 0 0 / 0.04), 0 6px 16px -4px rgb(0 0 0 / 0.08);
   --codex-shadow-composer-focus: 0 2px 4px 0 rgb(0 0 0 / 0.06), 0 10px 24px -6px rgb(0 0 0 / 0.12);
 }
+/* CJK 落系统 UI 变体（.蘋方 UI Text-簡）：Chromium 在 lang=zh 文档里把
+   ui-sans-serif / system-ui 的 CJK 解析成普通苹方（宽且重），lang=en 才落 UI
+   变体（CDP 实测确认，-apple-system 等栈同理）。app 的 i18n 会把 <html lang>
+   设成界面语言（中文界面=zh），故正文区与输入框都要用 -webkit-locale 压回 en：
+   字体解析随系统字体栈自动选 UI 变体，中文正文的断行语义不受影响；拼写检查
+   也不受影响——会话词典按系统 locale 走，中文本来就不参与。 */
+[data-slot='aui_thread-content'],
+[data-slot='aui_user-message-root'] .composer-human-message {
+  -webkit-locale: "en";
+}
+
+/* 输入区字体反压：app 的 [data-slot='composer-rich-input']:lang(zh/zh-hant/ja)
+   把系统 CJK 字体排在 var(--dt-font-sans) 前面（为 …—“” 全角标点），中文界面下
+   输入框落普通苹方 —— !important 压过 :lang 规则（app 规则无 important，Chromium
+   实测可行），输入框与消息区同源；配合上面的 -webkit-locale 落 UI 变体。 */
+html [data-slot='composer-rich-input'] {
+  font-family: var(--dt-font-sans) !important;
+  -webkit-locale: "en";
+}
+
 html.dark {
   --codex-shadow-menu: 0 2px 4px -1px rgb(0 0 0 / 0.2), 0 0 0 1px var(--dt-border);
   --codex-shadow-dialog: 0 8px 16px 0 #00000059, 0 2px 8px 0 #0003, 0 0 0 1px var(--dt-border);
@@ -679,11 +699,7 @@ function buildCustomCSS(prefs) {
   const textPreset = TEXT_FONTS.find(o => o.value === p.fontText)
   if (textPreset?.stack) {
     blocks.push(`html {\n  --dt-font-sans: ${textPreset.stack} !important;\n}`)
-    // 输入区跟档位走：app 的 [data-slot='composer-rich-input']:lang(zh/zh-hant/ja)
-    // 把系统 CJK 字体排在 var(--dt-font-sans) 前面（为了 …—“” 全角渲染），档位在
-    // 中/日文界面下进不了输入框 —— 这里按档位重发 font-family 反压 :lang 规则，
-    // 输入框与消息区同源；回退栈自带 CJK/emoji，全角标点随档位字体走。
-    blocks.push(`html [data-slot='composer-rich-input'] {\n  font-family: var(--dt-font-sans) !important;\n}`)
+    // 输入区反压已并入 customCSSBase（无条件覆盖 :lang(zh) 规则），此处无需按档位重发。
     // 可读性渲染增强（如衬线档的小字号描边）随档位发出，继承到全部文本。
     if (textPreset.legibility) blocks.push(`html {\n  ${textPreset.legibility}\n}`)
   }
@@ -697,16 +713,21 @@ const codexTheme = {
   colors: light,
   darkColors: dark,
   typography: {
-    // 回退栈补全：CJK 补 Linux 档（Noto Sans CJK SC），尾部照 app 自带栈挂 emoji
-    // 回退（emoji 字体只兜 emoji 字形，正文渲染不变）。
+    // 栈内不放显式中文字体名：ui-sans-serif / generic sans-serif 在 -webkit-locale
+    // "en" 下 CJK 落系统 UI 变体（.蘋方 UI Text-簡，ZCode 同款观感）。栈里只要在
+    // generic 之前出现任何显式中文字体名（含私有变体名 '.蘋方 UI Text-簡'——它
+    // 直写时 CJK 反而解析成普通苹方），UI 变体就会被截胡（CDP 逐项实测确认）。
+    // CJK 兜底交给系统回退（Linux fontconfig 出 Noto Sans CJK，Windows 出雅黑）。
     fontSans:
-      "-apple-system, BlinkMacSystemFont, 'SF Pro Text', 'Helvetica Neue', 'PingFang SC', 'Hiragino Sans GB', 'Microsoft YaHei', 'Noto Sans CJK SC', sans-serif, 'Apple Color Emoji', 'Segoe UI Emoji', 'Segoe UI Symbol', 'Noto Color Emoji', emoji",
+      "ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, 'SF Pro Text', 'Helvetica Neue', sans-serif, 'Apple Color Emoji', 'Segoe UI Emoji', 'Segoe UI Symbol', 'Noto Color Emoji', emoji",
+    // 等宽栈同理：不列显式 CJK 名，generic monospace 在 macOS 落 Menlo，CJK 随
+    // locale 走系统回退（与 ZCode 的 --font-mono 行为一致）。
     fontMono:
-      "ui-monospace, 'SF Mono', SFMono-Regular, Menlo, Monaco, Consolas, 'Liberation Mono', 'PingFang SC', 'Hiragino Sans GB', 'Microsoft YaHei', 'Noto Sans CJK SC', monospace, 'Apple Color Emoji', 'Segoe UI Emoji', 'Segoe UI Symbol', 'Noto Color Emoji', emoji",
+      "ui-monospace, 'SF Mono', SFMono-Regular, Menlo, Monaco, Consolas, 'Liberation Mono', monospace, 'Apple Color Emoji', 'Segoe UI Emoji', 'Segoe UI Symbol', 'Noto Color Emoji', emoji",
     // 根行高（画到 --dt-line-height）：正文、消息内容、界面文字统一的行距基线。
-    // 这是主题唯一的行高旋钮——之前没设，正文一直在吃 app 默认 1.5。
-    // 「内容间距」档位会按 pref 生成 :root 声明覆盖此值。
-    lineHeight: '1.7'
+    // 1.4286 对齐 ZCode 的 20px 行距（正文 0.875rem × 1.4286 ≈ 20px）；1.7 是正文
+    // 还是 0.9375rem 时代的值，偏松。「内容间距」档位会按 pref 生成 :root 声明覆盖此值。
+    lineHeight: '1.4286'
   }
 }
 
