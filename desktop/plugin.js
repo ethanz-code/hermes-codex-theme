@@ -69,23 +69,35 @@ const CODE_FONTS = [
   }
 ]
 
-// 档位规则用 !important：主题每次应用都把 --dt-font-* 写在 <html> 内联样式上，
-// 普通规则压不过内联，重要声明可以（已在 Chromium 实测）。
-const FONT_PRESET_RULES = [
-  ...TEXT_FONTS.map(o => ['data-codex-text-font', o.value, '--dt-font-sans', o.stack]),
-  ...CODE_FONTS.map(o => ['data-codex-code-font', o.value, '--dt-font-mono', o.stack])
-]
-  .filter(entry => entry[3])
-  .map(([attr, value, cssVar, stack]) => `html[${attr}='${value}'] { ${cssVar}: ${stack} !important; }`)
-  .join('\n')
-
-// 三档内容间距：紧凑 / 舒适（默认）/ 宽松 —— 行高与段距整档缩放，
-// 见 customCSS 的 html[data-codex-density] 规则。
+// 三档内容间距：紧凑 / 舒适（默认）/ 宽松 —— 行高与段距整档缩放，非默认档按
+// 当前 pref 直接生成 :root 声明（见 buildCustomCSS），默认档不发规则。
 const DENSITIES = [
   { value: 'compact', labelKey: 'compact' },
   { value: 'comfortable', labelKey: 'comfortable' },
   { value: 'roomy', labelKey: 'roomy' }
 ]
+
+// 非默认档位的声明体（取值沿用旧 html[data-codex-density] 规则）。
+const DENSITY_RULES = {
+  compact: `:root {
+  --paragraph-gap: 0.5rem;
+  --turn-block-gap: 0.875rem;
+  --tool-row-gap: 0.375rem;
+  --codex-bubble-pad-y: 0.5rem;
+  --codex-bubble-pad-x: 0.75rem;
+  --codex-li-gap: 0.2rem;
+  --dt-line-height: 1.55 !important;
+}`,
+  roomy: `:root {
+  --paragraph-gap: 0.875rem;
+  --turn-block-gap: 1.625rem;
+  --tool-row-gap: 0.625rem;
+  --codex-bubble-pad-y: 0.75rem;
+  --codex-bubble-pad-x: 1rem;
+  --codex-li-gap: 0.4rem;
+  --dt-line-height: 1.8 !important;
+}`
+}
 
 const PREF_DEFAULTS = { colWidth: '55rem', density: 'comfortable', language: 'system', fontText: 'default', fontCode: 'default' }
 const LANGUAGES = ['system', 'zh', 'en']
@@ -118,15 +130,19 @@ function normalizeFont(value, list) {
   return list.some(o => o.value === value) ? value : 'default'
 }
 
+function normalizePrefs(stored) {
+  const p = { ...PREF_DEFAULTS, ...(stored || {}) }
+  return {
+    colWidth: normalizeColWidth(p.colWidth),
+    density: normalizeDensity(p.density),
+    language: normalizeLanguage(p.language),
+    fontText: normalizeFont(p.fontText, TEXT_FONTS),
+    fontCode: normalizeFont(p.fontCode, CODE_FONTS)
+  }
+}
+
 function getPref(key) {
-  const v = storage ? storage.get('prefs', null) : null
-  const raw = (v && v[key]) || PREF_DEFAULTS[key]
-  if (key === 'colWidth') return normalizeColWidth(raw)
-  if (key === 'density') return normalizeDensity(raw)
-  if (key === 'language') return normalizeLanguage(raw)
-  if (key === 'fontText') return normalizeFont(raw, TEXT_FONTS)
-  if (key === 'fontCode') return normalizeFont(raw, CODE_FONTS)
-  return raw
+  return normalizePrefs(storage ? storage.get('prefs', null) : null)[key]
 }
 
 function setPref(key, value) {
@@ -136,17 +152,21 @@ function setPref(key, value) {
   if (key === 'language') languageListeners.forEach(listener => listener())
 }
 
-// 阅读栏宽度随主题的 customCSS 发出（只在 Codex 激活时生效），设置变更时重注册
-// 同 id 的 THEMES_AREA 条目覆盖旧值；顺带清掉旧版本写进 <html> 内联样式的残留。
-function applyPrefs(prefs) {
-  const stored = prefs || (storage ? storage.get('prefs', null) : null) || {}
-  const p = { ...PREF_DEFAULTS, ...stored }
+// 阅读栏宽度 / 内容间距 / 字体档位都随主题的 customCSS 发出（只在 Codex 激活时
+// 生效），设置变更时重注册同 id 的 THEMES_AREA 条目覆盖旧值；顺带清掉旧版本写进
+// <html> 内联样式与 dataset 的残留。
+function clearDatasetPrefs() {
   const root = document.documentElement
-  root.style.removeProperty('--composer-width')
-  registerThemeEntry()
-  root.dataset.codexDensity = normalizeDensity(p.density)
-  root.dataset.codexTextFont = normalizeFont(p.fontText, TEXT_FONTS)
-  root.dataset.codexCodeFont = normalizeFont(p.fontCode, CODE_FONTS)
+  root.removeAttribute('data-codex-density')
+  root.removeAttribute('data-codex-text-font')
+  root.removeAttribute('data-codex-code-font')
+}
+
+function applyPrefs(prefs) {
+  const p = normalizePrefs(prefs || (storage ? storage.get('prefs', null) : null))
+  document.documentElement.style.removeProperty('--composer-width')
+  clearDatasetPrefs()
+  registerThemeEntry(p)
 }
 
 function openIssues() {
@@ -264,26 +284,6 @@ html.dark {
   --codex-shadow-dialog: 0 8px 16px 0 #00000059, 0 2px 8px 0 #0003, 0 0 0 1px var(--dt-border);
   --codex-shadow-composer: 0 1px 2px 0 rgb(0 0 0 / 0.4), 0 6px 16px -4px rgb(0 0 0 / 0.45);
   --codex-shadow-composer-focus: 0 2px 4px 0 rgb(0 0 0 / 0.5), 0 10px 24px -6px rgb(0 0 0 / 0.55);
-}
-
-/* 内容间距档位：紧凑 / 舒适（默认即上方基准）/ 宽松 */
-html[data-codex-density='compact'] {
-  --paragraph-gap: 0.5rem;
-  --turn-block-gap: 0.875rem;
-  --tool-row-gap: 0.375rem;
-  --codex-bubble-pad-y: 0.5rem;
-  --codex-bubble-pad-x: 0.75rem;
-  --codex-li-gap: 0.2rem;
-  --dt-line-height: 1.55 !important;
-}
-html[data-codex-density='roomy'] {
-  --paragraph-gap: 0.875rem;
-  --turn-block-gap: 1.625rem;
-  --tool-row-gap: 0.625rem;
-  --codex-bubble-pad-y: 0.75rem;
-  --codex-bubble-pad-x: 1rem;
-  --codex-li-gap: 0.4rem;
-  --dt-line-height: 1.8 !important;
 }
 
 /* 正文：ChatGPT 式阅读节奏 —— 字重承载层级，行距随间距档位（与 --dt-line-height
@@ -585,49 +585,18 @@ html.dark [data-slot='dialog-overlay'] {
   flex-shrink: 0;
   white-space: nowrap;
 }
-
-/* ── 字体档位（设置页切换即时生效）── 主题把 --dt-font-sans / --dt-font-mono 写在
-   <html> 内联样式上，这里用 !important 的档位规则压过内联值；「默认」档无规则，
-   走主题/应用原值。规则由 TEXT_FONTS / CODE_FONTS 生成。 */
-${FONT_PRESET_RULES}
-
-/* ── 输入对话框拖拽（弹窗式移动；行为 JS 见「输入对话框拖拽」段）────────────
-   data-codex-float：脱坞后的 fixed 定位 —— bottom/right 内缩 + 冻结宽度，
-   与 app pop-out 同一套落点语义（草稿长高向上扩，落点不漂移）。
-   :not([data-popped-out]) 把 app 自己的弹出态整段让位，两套定位永不叠加。 */
-[data-slot='composer-dock'][data-codex-float]:not([data-popped-out]) {
-  position: fixed;
-  left: auto;
-  translate: none;
-  right: clamp(8px, var(--codex-float-right), calc(100vw - var(--codex-float-width) - 8px));
-  bottom: clamp(8px, var(--codex-float-bottom), calc(100vh - var(--composer-measured-height, 4.5rem) - 8px));
-  width: var(--codex-float-width);
-  max-width: calc(100vw - 1rem);
-}
-
-/* 把手：顶缘 grip 按钮即拖动把手（单击仍是状态抽屉开关，按住拖动才移动） */
-[data-slot='status-drawer-toggle'] {
-  cursor: grab;
-}
-
-/* 拖动中：全局 grabbing 光标 + 禁选，避免拖过输入区拉出文本选区 */
-html[data-codex-composer-drag],
-html[data-codex-composer-drag] :is(*, *::before, *::after) {
-  cursor: grabbing;
-}
-html[data-codex-composer-drag] :is(*, *::before, *::after) {
-  user-select: none !important;
-}
-
-/* 拖动态抬升：用纯 elevation 的 --codex-shadow-composer-focus（与聚焦态同一语言；
-   --codex-shadow-dialog 尾层带 1px ring，会与 1px 实边框叠成双发丝线） */
-html[data-codex-composer-drag] [data-slot='composer-surface'] {
-  box-shadow: var(--codex-shadow-composer-focus) !important;
-}
 `
 
-function buildCustomCSS(colWidth) {
-  return `${customCSSBase}\n:root {\n  --composer-width: ${colWidth};\n}\n`
+function buildCustomCSS(prefs) {
+  const p = prefs || normalizePrefs(storage ? storage.get('prefs', null) : null)
+  const blocks = [DENSITY_RULES[p.density]].filter(Boolean)
+  // 档位规则用 !important：主题每次应用都把 --dt-font-* 写在 <html> 内联样式上，
+  // 普通规则压不过内联，重要声明可以（已在 Chromium 实测）；「默认」档不发规则。
+  const textStack = TEXT_FONTS.find(o => o.value === p.fontText)?.stack
+  if (textStack) blocks.push(`html {\n  --dt-font-sans: ${textStack} !important;\n}`)
+  const codeStack = CODE_FONTS.find(o => o.value === p.fontCode)?.stack
+  if (codeStack) blocks.push(`html {\n  --dt-font-mono: ${codeStack} !important;\n}`)
+  return `${customCSSBase}\n:root {\n  --composer-width: ${p.colWidth};\n}\n${blocks.join('\n')}\n`
 }
 
 const codexTheme = {
@@ -640,7 +609,7 @@ const codexTheme = {
     fontMono: "ui-monospace, 'SF Mono', SFMono-Regular, Menlo, Monaco, Consolas, 'Liberation Mono', monospace",
     // 根行高（画到 --dt-line-height）：正文、消息内容、界面文字统一的行距基线。
     // 这是主题唯一的行高旋钮——之前没设，正文一直在吃 app 默认 1.5。
-    // 「内容间距」档位会按 html[data-codex-density] 覆盖此值。
+    // 「内容间距」档位会按 pref 生成 :root 声明覆盖此值。
     lineHeight: '1.7'
   }
 }
@@ -751,12 +720,12 @@ function makeT(fallbackT) {
   }
 }
 
-function buildTheme(t) {
+function buildTheme(t, prefs) {
   return {
     ...codexTheme,
     label: t('themeLabel'),
     description: t('themeDescription'),
-    customCSS: buildCustomCSS(getPref('colWidth'))
+    customCSS: buildCustomCSS(prefs)
   }
 }
 
@@ -976,7 +945,44 @@ const DRAG_INTERACTIVE_SELECTOR =
   'button, a, input, textarea, select, [contenteditable]:not([contenteditable="false"]), ' +
   '[data-slot="composer-rich-input"], [role="menuitem"], [data-radix-popper-content-wrapper]'
 
-// 与 customCSS 里 [data-codex-float] 规则同一套声明（含 8px 边距的 clamp），
+// 行为 CSS（浮动定位、把手 grab、拖动态 grabbing、:is(*,*) 瞬态）：不进主题
+// customCSS，统一住在插件自有 style#codex-theme-composer-drag 里随插件生死 ——
+// 非 Codex 主题下拖拽不再撕裂，主题切换/卸载零残留。外观阴影继续引用主题的
+// --codex-shadow-*。
+const DRAG_BEHAVIOR_CSS = `/* data-codex-float：脱坞后的 fixed 定位 —— bottom/right 内缩 + 冻结宽度，
+   与 app pop-out 同一套落点语义（草稿长高向上扩，落点不漂移）。
+   :not([data-popped-out]) 把 app 自己的弹出态整段让位，两套定位永不叠加。 */
+[data-slot='composer-dock'][data-codex-float]:not([data-popped-out]) {
+  position: fixed;
+  left: auto;
+  translate: none;
+  right: clamp(8px, var(--codex-float-right), calc(100vw - var(--codex-float-width) - 8px));
+  bottom: clamp(8px, var(--codex-float-bottom), calc(100vh - var(--composer-measured-height, 4.5rem) - 8px));
+  width: var(--codex-float-width);
+  max-width: calc(100vw - 1rem);
+}
+
+/* 把手：顶缘 grip 按钮即拖动把手（单击仍是状态抽屉开关，按住拖动才移动） */
+[data-slot='status-drawer-toggle'] {
+  cursor: grab;
+}
+
+/* 拖动中：全局 grabbing 光标 + 禁选，避免拖过输入区拉出文本选区 */
+html[data-codex-composer-drag],
+html[data-codex-composer-drag] :is(*, *::before, *::after) {
+  cursor: grabbing;
+}
+html[data-codex-composer-drag] :is(*, *::before, *::after) {
+  user-select: none !important;
+}
+
+/* 拖动态抬升：用纯 elevation 的 --codex-shadow-composer-focus（与聚焦态同一语言；
+   --codex-shadow-dialog 尾层带 1px ring，会与 1px 实边框叠成双发丝线） */
+html[data-codex-composer-drag] [data-slot='composer-surface'] {
+  box-shadow: var(--codex-shadow-composer-focus) !important;
+}`
+
+// 与 DRAG_BEHAVIOR_CSS 的 [data-codex-float] 规则同一套声明（含 8px 边距的 clamp），
 // 按锚点生成恢复规则时内联进规则本体，让落点找回不需要任何 JS 接触 DOM。
 const DRAG_MECHANICS =
   'position:fixed;left:auto;translate:none;' +
@@ -1016,6 +1022,15 @@ function dragCssString(value) {
 }
 
 // 恢复规则集整体重渲染：锚点数量个位数，整段替换比逐条增删更不易留脏规则。
+// 行为 CSS 与恢复规则同格渲染（双通道永不撕裂）；元素按需生成 —— 有落点记录
+// 或开始拖动时才进 DOM，卸载即移除。
+function dragCreateStyle() {
+  const el = document.createElement('style')
+  el.id = DRAG_STYLE_ID
+  document.head.appendChild(el)
+  return el
+}
+
 function dragRenderRules() {
   const rules = Object.entries(dragSavedPositions())
     .filter(([, p]) => p && [p.bottom, p.right, p.width].every(Number.isFinite))
@@ -1030,12 +1045,16 @@ function dragRenderRules() {
     .join('\n')
   const existing = document.getElementById(DRAG_STYLE_ID)
   if (!existing && !rules) return
-  const el = existing || document.createElement('style')
-  if (!existing) {
-    el.id = DRAG_STYLE_ID
-    document.head.appendChild(el)
+  const el = existing || dragCreateStyle()
+  const next = rules ? `${DRAG_BEHAVIOR_CSS}\n${rules}` : DRAG_BEHAVIOR_CSS
+  if (el.textContent !== next) el.textContent = next
+}
+
+function dragEnsureStyle() {
+  if (!document.getElementById(DRAG_STYLE_ID)) {
+    dragCreateStyle()
+    dragRenderRules()
   }
-  if (el.textContent !== rules) el.textContent = rules
 }
 
 function dragSavePosition(anchor, placement) {
@@ -1069,11 +1088,15 @@ function dragClampPlacement(placement, height) {
   }
 }
 
+// 脱坞中的 dock 集合：卸载时逐个回坞（宿主不提供 querySelectorAll 时的保底依据）。
+const dragFloated = new Set()
+
 function dragApply(dock, placement) {
   dock.style.setProperty('--codex-float-bottom', placement.bottom + 'px')
   dock.style.setProperty('--codex-float-right', placement.right + 'px')
   dock.style.setProperty('--codex-float-width', placement.width + 'px')
   dock.setAttribute('data-codex-float', '')
+  dragFloated.add(dock)
 }
 
 function dragClear(dock) {
@@ -1081,6 +1104,7 @@ function dragClear(dock) {
   dock.style.removeProperty('--codex-float-bottom')
   dock.style.removeProperty('--codex-float-right')
   dock.style.removeProperty('--codex-float-width')
+  dragFloated.delete(dock)
 }
 
 function dragFindTarget(event) {
@@ -1134,6 +1158,7 @@ function dragSchedule(session) {
 function dragOnPointerDown(event) {
   const target = dragFindTarget(event)
   if (!target) return
+  dragEnsureStyle()
   dragCancelGripClick()
   const rect = target.dock.getBoundingClientRect()
   if (rect.width <= 0 || rect.height <= 0) return
@@ -1288,6 +1313,9 @@ function installComposerDrag(ctx) {
   ctx.onDispose(() => {
     dragCancelGripClick()
     dragEnd(null)
+    for (const dock of [...dragFloated]) dragClear(dock)
+    // 兜底再扫一遍脱坞标记（宿主缺 querySelectorAll 时上面的自持集合已覆盖）
+    document.querySelectorAll?.('[data-codex-float]')?.forEach(dragClear)
     document.getElementById(DRAG_STYLE_ID)?.remove()
   })
 }
@@ -1304,8 +1332,8 @@ export default {
     pluginOs = ctx.os || null
     ctx.i18n.register(LOCALES)
     const t = makeT(ctx.i18n.t)
-    registerThemeEntry = () => {
-      ctx.register({ id: 'codex', area: THEMES_AREA, data: buildTheme(t) })
+    registerThemeEntry = prefs => {
+      ctx.register({ id: 'codex', area: THEMES_AREA, data: buildTheme(t, prefs) })
     }
 
     // 首次安装时自动接管一次主题；之后完全尊重用户在「外观」里的手动选择
@@ -1316,6 +1344,7 @@ export default {
       requestTheme('codex')
     }
     applyPrefs()
+    ctx.onDispose(clearDatasetPrefs)
     installComposerDrag(ctx)
 
     // 装载确认（热重载/启动排查的地面真值，见 desktop.log）
@@ -1370,6 +1399,6 @@ export default {
 
     registerStatic()
     ctx.i18n.onLocaleChange(registerStatic)
-    onLanguagePrefChange(registerStatic)
+    ctx.onDispose(onLanguagePrefChange(registerStatic))
   }
 }
