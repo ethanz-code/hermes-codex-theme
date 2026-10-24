@@ -121,11 +121,12 @@ Everything lives in **Settings → Plugins → Codex Theme**, grouped into
 | Reading width | Compact (768px) / Comfortable (880px, default) / Roomy (992px) | Theme-level knob; Hermes has no built-in width setting |
 | Content spacing | Compact (1.55) / Comfortable (1.7, default) / Roomy (1.8) | Line height + paragraph & bubble rhythm |
 | Text font | Default / Serif / Mono | Chinese fallbacks in every preset; *Default* keeps theme/app fonts |
-|| Code font | Default / Fira Code / Courier | Fira Code / JetBrains Mono must be installed locally — otherwise the system mono kicks in |
+| Code font | Default / Fira Code / Courier | Fira Code / JetBrains Mono must be installed locally — otherwise the system mono kicks in |
 | User bubble background | Color picker + *Default* | *Default*: theme gray (#F3F3F3 light / #202020 dark) |
 | User bubble text | Color picker + *Default* | *Default*: theme foreground |
 | Assistant bubble background | Color picker + *Default* | *Default*: transparent — replies sit straight on the canvas |
 | Assistant bubble text | Color picker + *Default* | *Default*: theme foreground |
+| Input focus | Hands off (default) / Follow mouse | Whether the input box pulls focus back when the pointer moves over the chat area or you click outside; “Hands off” only focuses the input at app start, on a new session, or when you click or type into it |
 | Language | Follow system / 中文 / English | Plugin UI only; Hermes' own language is untouched |
 | Feedback | *Open GitHub Issues* | Opens the repo's Issues page in your browser |
 
