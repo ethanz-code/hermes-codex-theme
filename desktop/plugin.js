@@ -11,7 +11,7 @@
  *
  * 控制入口（不在输入框加东西）：
  *   设置 → 插件 → Codex Theme：亮暗模式（跟随系统/深色/浅色）、阅读栏宽度（分段控件）
- *   ⌘K：「Theme: 使用 Codex 主题」「Theme: Codex 主题设置」
+ *   ⌘K：「Theme: Use Codex theme」「Theme: Codex theme settings」（文案随应用语言）
  *
  * 安装：~/.hermes/desktop-plugins/codex-theme/plugin.js（目录名 == id）
  */
@@ -35,6 +35,7 @@ const COL_WIDTHS = [
 
 const PREF_DEFAULTS = { colWidth: '55rem' }
 let storage = null
+let pluginCtx = null
 
 function normalizeColWidth(value) {
   return COL_WIDTHS.some(o => o.value === value) ? value : PREF_DEFAULTS.colWidth
@@ -52,10 +53,13 @@ function setPref(key, value) {
   applyPrefs(next)
 }
 
+// 阅读栏宽度随主题的 customCSS 发出（只在 Codex 激活时生效），设置变更时重注册
+// 同 id 的 THEMES_AREA 条目覆盖旧值；顺带清掉旧版本写进 <html> 内联样式的残留。
 function applyPrefs(prefs) {
   const stored = prefs || (storage ? storage.get('prefs', null) : null) || {}
   const p = { ...PREF_DEFAULTS, ...stored }
-  document.documentElement.style.setProperty('--composer-width', normalizeColWidth(p.colWidth))
+  document.documentElement.style.removeProperty('--composer-width')
+  registerThemeEntry(normalizeColWidth(p.colWidth))
 }
 
 // ─── 双套配色（Codex 基准 + ChatGPT 石墨纸感的灰阶） ─────────────────────────
@@ -120,11 +124,10 @@ const light = {
 
 // ─── 样式基底（圆角体系 / 发丝线 / 间距节奏 / 侧栏） ─────────────────────────
 
-const customCSS = `
-/* 阅读栏与字号基线（默认阅读栏 880px；具体值由设置页 --composer-width 覆盖。
-   行高走主题 typography.lineHeight（--dt-line-height: 1.7），此处只管阅读栏。 */
+const customCSSBase = `
+/* 字号与间距基线（阅读栏宽度 --composer-width 随偏好在 customCSS 尾部输出，
+   行高走主题 typography.lineHeight（--dt-line-height: 1.7），此处只管阅读栏）。 */
 :root {
-  --composer-width: 55rem;
   --conversation-text-base-size: 0.9375rem;
   --conversation-base-line-height: 1.5rem;
   --conversation-tool-base-size: 0.75rem;
@@ -277,21 +280,32 @@ const customCSS = `
 }
 `
 
-const codexTheme = {
-  name: 'codex',
-  label: 'Codex',
-  description: 'Codex × ChatGPT · 亮暗双套 · 随系统切换',
-  colors: light,
-  darkColors: dark,
-  typography: {
-    fontSans:
-      "-apple-system, BlinkMacSystemFont, 'SF Pro Text', 'Helvetica Neue', 'PingFang SC', 'Hiragino Sans GB', 'Microsoft YaHei', sans-serif",
-    fontMono: "ui-monospace, 'SF Mono', SFMono-Regular, Menlo, Monaco, Consolas, 'Liberation Mono', monospace",
-    // 根行高（画到 --dt-line-height）：正文、消息内容、界面文字统一的行距基线。
-    // 这是主题唯一的行高旋钮——之前没设，正文一直在吃 app 默认 1.5。
-    lineHeight: '1.7'
-  },
-  customCSS
+function buildCustomCSS(colWidth) {
+  return `${customCSSBase}\n:root {\n  --composer-width: ${colWidth};\n}\n`
+}
+
+function buildTheme(colWidth) {
+  return {
+    name: 'codex',
+    label: 'Codex',
+    description: pluginCtx.i18n.t('themeDescription'),
+    colors: light,
+    darkColors: dark,
+    typography: {
+      fontSans:
+        "-apple-system, BlinkMacSystemFont, 'SF Pro Text', 'Helvetica Neue', 'PingFang SC', 'Hiragino Sans GB', 'Microsoft YaHei', sans-serif",
+      fontMono: "ui-monospace, 'SF Mono', SFMono-Regular, Menlo, Monaco, Consolas, 'Liberation Mono', monospace",
+      // 根行高（画到 --dt-line-height）：正文、消息内容、界面文字统一的行距基线。
+      // 这是主题唯一的行高旋钮——之前没设，正文一直在吃 app 默认 1.5。
+      lineHeight: '1.7'
+    },
+    customCSS: buildCustomCSS(colWidth)
+  }
+}
+
+function registerThemeEntry(colWidth) {
+  if (!pluginCtx) return
+  pluginCtx.register({ id: 'codex', area: THEMES_AREA, data: buildTheme(colWidth) })
 }
 
 // ─── 设置页（设置 → 插件 → Codex Theme）────────────────────────────────────────
@@ -312,7 +326,10 @@ const LOCALES = {
     widthHint: 'Prose column width — Narrow 768px · Standard 880px · Wide 992px (ChatGPT uses 720–768px).',
     narrow: 'Narrow',
     standard: 'Standard',
-    wide: 'Wide'
+    wide: 'Wide',
+    themeDescription: 'Codex × ChatGPT · dual light/dark palettes · follows the system appearance',
+    paletteApply: 'Theme: Use Codex theme',
+    paletteSettings: 'Theme: Codex theme settings'
   },
   zh: {
     title: 'Codex 主题',
@@ -328,7 +345,10 @@ const LOCALES = {
     widthHint: '正文列宽 —— 窄 768px · 标准 880px · 宽 992px（ChatGPT 为 720–768px）。',
     narrow: '窄',
     standard: '标准',
-    wide: '宽'
+    wide: '宽',
+    themeDescription: 'Codex × ChatGPT · 亮暗双套 · 随系统切换',
+    paletteApply: 'Theme: 使用 Codex 主题',
+    paletteSettings: 'Theme: Codex 主题设置'
   }
 }
 
@@ -413,13 +433,21 @@ export default {
   id: ID,
   name: 'Codex Theme',
   // 面板描述的唯一来源（desktop 契约无 version/author 字段，尾注与 plugin.yaml 的 version/author 同步）
-  description: 'Codex × ChatGPT inspired theme for the Hermes Desktop chat — dual light/dark palettes that follow the system appearance, graphite-on-paper typography with a 1.7 root line height, 10px radius system, hairline borders, and a Settings page (appearance mode + 768/880/992px reading column presets via segmented controls). (v1.0.0 · ethanz-code)',
+  description: 'Codex × ChatGPT inspired theme for the Hermes Desktop chat — dual light/dark palettes that follow the system appearance, graphite-on-paper typography with a 1.7 root line height, 10px radius system, hairline borders, and a Settings page (appearance mode + 768/880/992px reading column presets via segmented controls). (v1.0.1 · ethanz-code)',
   register(ctx) {
     storage = ctx.storage
+    pluginCtx = ctx
     ctx.i18n.register(LOCALES)
 
-    // 主题本体：外观设置网格 / ⌘K / /skin 皆可见
-    ctx.register({ id: 'codex', area: THEMES_AREA, data: codexTheme })
+    // 主题本体：外观设置网格 / ⌘K / /skin 皆可见（阅读栏宽度随 customCSS 输出）
+    applyPrefs()
+    registerPaletteEntries()
+
+    // 切换应用语言时重建静态文案（主题描述 / ⌘K 标签）
+    ctx.i18n.onLocaleChange(() => {
+      applyPrefs()
+      registerPaletteEntries()
+    })
 
     // 首次安装时自动接管一次主题；之后完全尊重用户在「外观」里的手动选择
     // （避免每次启动/热重载把用户选的其它主题抢回来）。切回 Codex：
@@ -428,10 +456,9 @@ export default {
       storage.set('installed', true)
       requestTheme('codex')
     }
-    applyPrefs()
 
     // 装载确认（热重载/启动排查的地面真值，见 desktop.log）
-    console.log('[codex-theme] register ok v1.0.0')
+    console.log('[codex-theme] register ok v1.0.1')
 
     // 设置 → 插件 → Codex Theme（亮暗 / 阅读栏）
     if (typeof ctx.registerSettingsPage === 'function') {
@@ -444,31 +471,33 @@ export default {
     } else {
       console.error('[codex-theme] ctx.registerSettingsPage unavailable in this build')
     }
-
-    // ⌘K 入口（低调、可选）
-    ctx.register({
-      id: 'palette-apply',
-      area: PALETTE_AREA,
-      data: {
-        id: 'codex-theme.apply',
-        label: 'Theme: 使用 Codex 主题',
-        keywords: ['codex', 'theme', '主题', 'appearance', '外观'],
-        run: () => {
-          requestTheme('codex')
-          applyPrefs()
-        }
-      }
-    })
-
-    ctx.register({
-      id: 'palette-settings',
-      area: PALETTE_AREA,
-      data: {
-        id: 'codex-theme.settings',
-        label: 'Theme: Codex 主题设置',
-        keywords: ['codex', 'theme', 'settings', '设置', '深色', '浅色', '亮', '暗'],
-        run: () => host.navigate(pluginSettingsHref('codex-theme'))
-      }
-    })
   }
+}
+
+// ⌘K 入口（低调、可选）
+function registerPaletteEntries() {
+  pluginCtx.register({
+    id: 'palette-apply',
+    area: PALETTE_AREA,
+    data: {
+      id: 'codex-theme.apply',
+      label: pluginCtx.i18n.t('paletteApply'),
+      keywords: ['codex', 'theme', '主题', 'appearance', '外观'],
+      run: () => {
+        requestTheme('codex')
+        applyPrefs()
+      }
+    }
+  })
+
+  pluginCtx.register({
+    id: 'palette-settings',
+    area: PALETTE_AREA,
+    data: {
+      id: 'codex-theme.settings',
+      label: pluginCtx.i18n.t('paletteSettings'),
+      keywords: ['codex', 'theme', 'settings', '设置', '深色', '浅色', '亮', '暗'],
+      run: () => host.navigate(pluginSettingsHref('codex-theme'))
+    }
+  })
 }
