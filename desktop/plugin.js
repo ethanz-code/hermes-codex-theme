@@ -99,8 +99,16 @@ const DENSITY_RULES = {
 }`
 }
 
-const PREF_DEFAULTS = { colWidth: '55rem', density: 'comfortable', language: 'system', fontText: 'default', fontCode: 'default' }
+const PREF_DEFAULTS = {
+  colWidth: '55rem',
+  density: 'comfortable',
+  language: 'system',
+  fontText: 'default',
+  fontCode: 'default',
+  focusGuard: 'guard'
+}
 const LANGUAGES = ['system', 'zh', 'en']
+const FOCUS_GUARD_MODES = ['guard', 'follow']
 let storage = null
 let pluginOs = null
 let registerThemeEntry = () => {}
@@ -130,6 +138,10 @@ function normalizeFont(value, list) {
   return list.some(o => o.value === value) ? value : 'default'
 }
 
+function normalizeFocusGuard(value) {
+  return FOCUS_GUARD_MODES.includes(value) ? value : PREF_DEFAULTS.focusGuard
+}
+
 function normalizePrefs(stored) {
   const p = { ...PREF_DEFAULTS, ...(stored || {}) }
   return {
@@ -137,7 +149,8 @@ function normalizePrefs(stored) {
     density: normalizeDensity(p.density),
     language: normalizeLanguage(p.language),
     fontText: normalizeFont(p.fontText, TEXT_FONTS),
-    fontCode: normalizeFont(p.fontCode, CODE_FONTS)
+    fontCode: normalizeFont(p.fontCode, CODE_FONTS),
+    focusGuard: normalizeFocusGuard(p.focusGuard)
   }
 }
 
@@ -652,6 +665,10 @@ const LOCALES = {
     fontFira: 'Fira Code',
     fontCourier: 'Courier',
     panelGeneral: 'General',
+    focusLabel: 'Input focus',
+    focusHint: 'Whether the input box pulls focus back when the pointer moves over the chat or you click outside. “Hands off” (default) keeps focus where you put it — the input takes focus only at app start, when a new session opens, or when you click or type into it. “Follow mouse” restores the built-in behavior, where focus jumps to the input as the pointer moves.',
+    focusHandsOff: 'Hands off',
+    focusFollowMouse: 'Follow mouse',
     languageLabel: 'Language',
     languageHint: 'Language for this plugin’s UI (settings, palette, popups) — follows the system & app language by default, or pin it below.',
     langZh: '中文',
@@ -693,6 +710,10 @@ const LOCALES = {
     fontFira: 'Fira Code',
     fontCourier: 'Courier',
     panelGeneral: '通用',
+    focusLabel: '输入框焦点',
+    focusHint: '鼠标移过聊天区或点击外部时，输入框是否把焦点抢回去。「防抢占」（默认）让焦点停在你放的位置 —— 只在应用启动、切换新会话、或你直接点击/键入输入框时聚焦；「跟随鼠标」恢复应用自带行为：鼠标一动，焦点就跳回输入框。',
+    focusHandsOff: '防抢占',
+    focusFollowMouse: '跟随鼠标',
     languageLabel: '语言',
     languageHint: '本插件界面（设置页、⌘K、弹窗）的显示语言 —— 默认跟随系统与应用语言，也可固定为中文或英文。',
     langZh: '中文',
@@ -763,6 +784,7 @@ function SettingsPage() {
   const [density, setDensity] = useState(() => getPref('density'))
   const [fontText, setFontText] = useState(() => getPref('fontText'))
   const [fontCode, setFontCode] = useState(() => getPref('fontCode'))
+  const [focusGuard, setFocusGuard] = useState(() => getPref('focusGuard'))
 
   const pickWidth = value => {
     setPref('colWidth', value)
@@ -787,6 +809,11 @@ function SettingsPage() {
   const pickCodeFont = value => {
     setPref('fontCode', value)
     setFontCode(value)
+  }
+
+  const pickFocusGuard = value => {
+    setPref('focusGuard', value)
+    setFocusGuard(value)
   }
 
   return jsxs('div', {
@@ -887,6 +914,19 @@ function SettingsPage() {
       jsx(SettingsPanel, {
         title: t('panelGeneral'),
         rows: [
+          jsx(SettingsRow, {
+            key: 'focusGuard',
+            title: t('focusLabel'),
+            hint: t('focusHint'),
+            control: jsx(SegmentedControl, {
+              value: focusGuard,
+              onChange: pickFocusGuard,
+              options: [
+                { id: 'guard', label: t('focusHandsOff') },
+                { id: 'follow', label: t('focusFollowMouse') }
+              ]
+            })
+          }),
           jsx(SettingsRow, {
             key: 'language',
             title: t('languageLabel'),
@@ -1320,6 +1360,57 @@ function installComposerDrag(ctx) {
   })
 }
 
+// ─── 输入框焦点守卫（防抢占）─────────────────────────────────────────────
+// 抢焦源头在 app 自己的 focus-follow（hermes-agent apps/desktop/src/app/chat/
+// composer/floating-target.ts）：pointermove / focusin 派发里把焦点拉回输入框，
+// 焦点被抢后 focusComposerInput（focus.ts）还会排 rAF + setTimeout(0) 两次重试。
+// 拦截指纹取「派发现场」而不是猜意图：window.event 类型为 pointermove / focusin
+// 时对输入框的 focus() 必是抢焦；其余派发上下文（click/keydown/…）和空上下文
+// （启动初始聚焦、切会话回焦）一律放行。浏览器原生点击聚焦不走 focus()，
+// 完全不受影响。抢焦被拦后 app 的两次空上下文重试，在重试窗内对同一元素
+// 一并压掉；任何用户手势（pointerdown/keydown）一到就提前关窗。
+const FOCUS_GUARD_EDITOR_SLOT = 'composer-rich-input'
+const FOCUS_GUARD_STEAL_EVENTS = new Set(['pointermove', 'focusin'])
+const FOCUS_GUARD_RETRY_WINDOW_MS = 250
+
+function installFocusGuard(ctx) {
+  const proto = typeof HTMLElement === 'undefined' ? null : HTMLElement.prototype
+  if (!proto || typeof proto.focus !== 'function') return
+  const original = proto.focus
+  const now = () => (typeof performance === 'undefined' ? Date.now() : performance.now())
+  let live = true
+  let retry = null
+  let wrapped = null
+
+  wrapped = function (...args) {
+    const el = this
+    const isEditor = Boolean(el && el.dataset && el.dataset.slot === FOCUS_GUARD_EDITOR_SLOT)
+    const eventType = typeof window === 'undefined' || !window.event ? '' : window.event.type
+    if (live && isEditor && getPref('focusGuard') === 'guard') {
+      if (FOCUS_GUARD_STEAL_EVENTS.has(eventType)) {
+        retry = { el, until: now() + FOCUS_GUARD_RETRY_WINDOW_MS }
+        return undefined
+      }
+      if (!eventType && retry && retry.el === el && now() <= retry.until) return undefined
+    }
+    return original.apply(el, args)
+  }
+  proto.focus = wrapped
+
+  const clearRetry = () => {
+    retry = null
+  }
+  ctx.addEventListener(document, 'pointerdown', clearRetry, true)
+  ctx.addEventListener(document, 'keydown', clearRetry, true)
+
+  ctx.onDispose(() => {
+    live = false
+    retry = null
+    if (proto.focus === wrapped) proto.focus = original
+    wrapped = null
+  })
+}
+
 // ─── 插件入口 ─────────────────────────────────────────────────────────────────
 
 export default {
@@ -1346,6 +1437,7 @@ export default {
     applyPrefs()
     ctx.onDispose(clearDatasetPrefs)
     installComposerDrag(ctx)
+    installFocusGuard(ctx)
 
     // 装载确认（热重载/启动排查的地面真值，见 desktop.log）
     console.log('[codex-theme] register ok v1.1.0')
