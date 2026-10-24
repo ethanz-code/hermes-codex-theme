@@ -98,7 +98,7 @@ hermes plugins install codex-theme
 或直接从 GitHub 安装：
 
 ```bash
-hermes plugins install ethanz-code/hermes-codex-theme
+hermes plugins install hey-yx/hermes-codex-theme
 ```
 
 然后打开 **设置 → 插件 → Codex Theme** 点「重新应用」（首次加载时主题也会自动

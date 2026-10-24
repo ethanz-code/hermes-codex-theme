@@ -24,7 +24,7 @@ import { useState } from 'react'
 import { jsx, jsxs } from 'react/jsx-runtime'
 
 const ID = 'codex-theme'
-const ISSUES_URL = 'https://github.com/ethanz-code/hermes-codex-theme/issues'
+const ISSUES_URL = 'https://github.com/hey-yx/hermes-codex-theme/issues'
 
 // ─── 偏好（阅读宽度 / 内容间距 / 字体），注册时与设置页共用 ─────────────────
 // 只动主题级的旋钮；不碰 Hermes 自己的配置项（如 --chat-text-scale 正文缩放、
@@ -1635,7 +1635,7 @@ export default {
   id: ID,
   name: 'Codex Theme',
   // 面板描述的唯一来源（desktop 契约无 version/author 字段，尾注与 plugin.yaml 的 version/author 同步）
-  description: 'Codex × ChatGPT inspired theme for the Hermes Desktop chat — dual light/dark palettes that follow the system appearance, graphite-on-paper typography with a 1.4286 root line height and content-spacing presets (1.3/1.4286/1.55), the OpenAI radius scale (inline 4px / rows 8px / controls 10px / cards 12px / composer 20px), hairline borders, and a bilingual Settings page (appearance mode, 768/880/992px reading width, text & code font presets, user/assistant chat bubble colors, input focus guard (hands-off / follow-mouse), zh/en language, GitHub Issues feedback). (v1.1.0 · ethanz-code)',
+  description: 'Codex × ChatGPT inspired theme for the Hermes Desktop chat — dual light/dark palettes that follow the system appearance, graphite-on-paper typography with a 1.4286 root line height and content-spacing presets (1.3/1.4286/1.55), the OpenAI radius scale (inline 4px / rows 8px / controls 10px / cards 12px / composer 20px), hairline borders, and a bilingual Settings page (appearance mode, 768/880/992px reading width, text & code font presets, user/assistant chat bubble colors, input focus guard (hands-off / follow-mouse), zh/en language, GitHub Issues feedback). (v1.1.0 · hey-yx)',
   register(ctx) {
     storage = ctx.storage
     pluginOs = ctx.os || null

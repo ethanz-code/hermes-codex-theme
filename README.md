@@ -107,7 +107,7 @@ hermes plugins install codex-theme
 Or install straight from GitHub:
 
 ```bash
-hermes plugins install ethanz-code/hermes-codex-theme
+hermes plugins install hey-yx/hermes-codex-theme
 ```
 
 Then open **Settings → Plugins → Codex Theme** and press *Reapply* (the theme
