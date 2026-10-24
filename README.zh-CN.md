@@ -1,9 +1,9 @@
 <p align="center">
-  <img src="assets/cover.png" alt="Codex Theme — Hermes 桌面聊天的石墨纸感主题" width="100%">
+  <a href="README.md">English</a> | <a href="README.zh-CN.md">简体中文</a>
 </p>
 
 <p align="center">
-  <a href="README.md">English</a> | <a href="README.zh-CN.md">简体中文</a>
+  <img src="assets/cover.png" alt="Codex Theme — Hermes 桌面聊天的石墨纸感主题" width="100%">
 </p>
 
 <h1 align="center">Codex Theme</h1>
@@ -21,6 +21,7 @@
 <p align="center">
   <a href="#亮点">亮点</a> •
   <a href="#效果">效果</a> •
+  <a href="#设计语言">设计语言</a> •
   <a href="#安装">安装</a> •
   <a href="#设置">设置</a>
 </p>

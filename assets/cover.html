@@ -10,7 +10,7 @@
     background: #181818; color: #f5f5f5;
     display: flex;
   }
-  .left { flex: 1.25; padding: 64px 56px; display: flex; flex-direction: column; justify-content: center; }
+  .left { flex: 1.3; padding: 56px 56px; display: flex; flex-direction: column; justify-content: center; }
   .badge {
     display: inline-flex; align-items: center; gap: 8px; align-self: flex-start;
     font-size: 13px; letter-spacing: 0.12em; text-transform: uppercase;
@@ -21,24 +21,26 @@
   h1 { font-size: 64px; line-height: 1.05; font-weight: 700; letter-spacing: -0.02em; }
   h1 .accent { color: #339CFF; }
   .sub { margin-top: 18px; font-size: 21px; line-height: 1.5; color: #b9b9b9; max-width: 30em; }
-  .pills { margin-top: 30px; display: flex; gap: 10px; flex-wrap: wrap; }
+  .pills { margin-top: 30px; display: flex; gap: 10px; flex-wrap: wrap; max-width: 560px; }
   .pill {
     font-size: 14px; color: #dedede; background: #232323;
     border: 1px solid #2a2a2a; border-radius: 10px; padding: 8px 14px;
+    white-space: nowrap;
   }
-  .swatches { margin-top: 38px; display: flex; gap: 10px; align-items: center; }
+  .swatches { margin-top: 36px; display: flex; gap: 16px; align-items: flex-start; }
+  .sw-item { display: flex; flex-direction: column; align-items: center; gap: 8px; }
   .sw { width: 44px; height: 44px; border-radius: 10px; border: 1px solid rgba(255,255,255,0.12); }
-  .sw span { display: block; font-size: 9px; text-align: center; margin-top: 50px; color: #8a8a8a; letter-spacing: 0.04em; }
+  .sw-item span { font-size: 9px; color: #8a8a8a; letter-spacing: 0.04em; }
   .right {
-    flex: 1; padding: 56px 48px; display: flex; align-items: center;
+    flex: 1; padding: 48px 44px; display: flex; align-items: center;
     background: linear-gradient(160deg, #1c1c1c 0%, #181818 100%);
     border-left: 1px solid #2a2a2a;
   }
   .card {
     width: 100%; background: #212121; border: 1px solid #2a2a2a;
-    border-radius: 16px; padding: 26px 28px;
+    border-radius: 16px; padding: 24px 26px;
   }
-  .card .row { display: flex; gap: 12px; margin-bottom: 18px; }
+  .card .row { display: flex; gap: 12px; margin-bottom: 16px; }
   .bubble {
     background: #202020; border: none; border-radius: 12px;
     padding: 10px 14px; font-size: 14px; line-height: 20px; color: #e8e8e8;
@@ -47,7 +49,7 @@
   .flat { font-size: 14px; line-height: 20px; color: #dcdcdc; }
   .flat .h { color: #fff; font-weight: 600; }
   .flat .m { color: #8f8f8f; font-family: ui-monospace, 'SF Mono', Menlo, monospace; font-size: 12.5px; }
-  .bar { display: flex; gap: 8px; margin-top: 22px; }
+  .bar { display: flex; gap: 8px; margin-top: 20px; }
   .chip { font-size: 11px; letter-spacing: 0.08em; text-transform: uppercase; color: #9b9b9b; background: #242424; border: 1px solid #2a2a2a; border-radius: 8px; padding: 6px 10px; }
   .chip.blue { color: #339CFF; border-color: rgba(51,156,255,0.4); }
 </style>
@@ -65,12 +67,12 @@
       <div class="pill">880px column · 20px rhythm</div>
     </div>
     <div class="swatches">
-      <div class="sw" style="background:#181818"></div>
-      <div class="sw" style="background:#339CFF"></div>
-      <div class="sw" style="background:#FFFFFF"></div>
-      <div class="sw" style="background:#0285FF"></div>
-      <div class="sw" style="background:#202020"></div>
-      <div class="sw" style="background:#F3F3F3"></div>
+      <div class="sw-item"><div class="sw" style="background:#181818"></div><span>#181818</span></div>
+      <div class="sw-item"><div class="sw" style="background:#202020"></div><span>#202020</span></div>
+      <div class="sw-item"><div class="sw" style="background:#F3F3F3"></div><span>#F3F3F3</span></div>
+      <div class="sw-item"><div class="sw" style="background:#FFFFFF"></div><span>#FFFFFF</span></div>
+      <div class="sw-item"><div class="sw" style="background:#339CFF"></div><span>#339CFF</span></div>
+      <div class="sw-item"><div class="sw" style="background:#0285FF"></div><span>#0285FF</span></div>
     </div>
   </div>
   <div class="right">

@@ -1,9 +1,9 @@
 <p align="center">
-  <img src="assets/cover.png" alt="Codex Theme — a graphite-on-paper theme for the Hermes Desktop chat" width="100%">
+  <a href="README.md">English</a> | <a href="README.zh-CN.md">简体中文</a>
 </p>
 
 <p align="center">
-  <a href="README.md">English</a> | <a href="README.zh-CN.md">简体中文</a>
+  <img src="assets/cover.png" alt="Codex Theme — a graphite-on-paper theme for the Hermes Desktop chat" width="100%">
 </p>
 
 <h1 align="center">Codex Theme</h1>
@@ -21,6 +21,7 @@
 <p align="center">
   <a href="#highlights">Highlights</a> •
   <a href="#screenshots">Screenshots</a> •
+  <a href="#design-language">Design language</a> •
   <a href="#install">Install</a> •
   <a href="#settings">Settings</a>
 </p>
