@@ -39,20 +39,25 @@ const COL_WIDTHS = [
 const LEGACY_COL_WIDTH = { '42rem': '48rem', '46rem': '48rem', '54rem': '55rem' }
 
 // 字体档位：正文字体 → --dt-font-sans，代码字体 → --dt-font-mono。
-// 每档都排了中文回退（苹方/雅黑/思源），中英文混排皆可；「默认」档不写规则，
-// 沿用主题与应用自己的字体（含 display.chat_font / desktop.font_family）。
+// 每档都排了中文回退（苹方/雅黑/思源）与 emoji 回退，中英文混排皆可；「默认」档
+// 不写规则，沿用主题与应用自己的字体（含 display.chat_font / desktop.font_family）。
 // 只覆盖主题级变量本身，不写 Hermes 的字体配置项。
+const EMOJI_FONTS = "'Apple Color Emoji', 'Segoe UI Emoji', 'Segoe UI Symbol', 'Noto Color Emoji', emoji"
 const TEXT_FONTS = [
   { value: 'default', labelKey: 'fontDefault' },
   {
     value: 'serif',
     labelKey: 'fontSerif',
-    stack: "Georgia, 'Times New Roman', 'Songti SC', STSong, 'Noto Serif SC', 'Source Han Serif SC', SimSun, serif"
+    stack: `Georgia, 'Times New Roman', 'Songti SC', STSong, 'Noto Serif SC', 'Source Han Serif SC', SimSun, serif, ${EMOJI_FONTS}`,
+    // 小字号宋体横画发细（实测 15px 比无衬线轻约 15% 墨迹，即「看不清」的来源）：
+    // 0.15px 同色描边把笔画写实。font-weight 500 对无 Medium 字重的 Songti 是空操作、
+    // 600 过粗会封死密集字形、subpixel AA 深色底有彩边 —— 描边是实测最稳的一档。
+    legibility: '-webkit-text-stroke-width: 0.15px;\n  -webkit-text-stroke-color: currentColor;'
   },
   {
     value: 'mono',
     labelKey: 'fontMonoText',
-    stack: "'SF Mono', SFMono-Regular, Menlo, Monaco, Consolas, 'Liberation Mono', 'PingFang SC', 'Hiragino Sans GB', 'Microsoft YaHei', 'Noto Sans CJK SC', monospace"
+    stack: `'SF Mono', SFMono-Regular, Menlo, Monaco, Consolas, 'Liberation Mono', 'PingFang SC', 'Hiragino Sans GB', 'Microsoft YaHei', 'Noto Sans CJK SC', monospace, ${EMOJI_FONTS}`
   }
 ]
 const CODE_FONTS = [
@@ -60,12 +65,12 @@ const CODE_FONTS = [
   {
     value: 'fira',
     labelKey: 'fontFira',
-    stack: "'Fira Code', 'FiraCode Nerd Font', 'JetBrains Mono', 'SF Mono', SFMono-Regular, Menlo, Consolas, 'Liberation Mono', 'PingFang SC', 'Hiragino Sans GB', 'Microsoft YaHei', 'Noto Sans CJK SC', monospace"
+    stack: `'Fira Code', 'FiraCode Nerd Font', 'JetBrains Mono', 'SF Mono', SFMono-Regular, Menlo, Consolas, 'Liberation Mono', 'PingFang SC', 'Hiragino Sans GB', 'Microsoft YaHei', 'Noto Sans CJK SC', monospace, ${EMOJI_FONTS}`
   },
   {
     value: 'courier',
     labelKey: 'fontCourier',
-    stack: "'Courier New', Courier, Menlo, Consolas, 'Liberation Mono', 'PingFang SC', 'Hiragino Sans GB', 'Microsoft YaHei', 'Noto Sans CJK SC', monospace"
+    stack: `'Courier New', Courier, Menlo, Consolas, 'Liberation Mono', 'PingFang SC', 'Hiragino Sans GB', 'Microsoft YaHei', 'Noto Sans CJK SC', monospace, ${EMOJI_FONTS}`
   }
 ]
 
@@ -592,8 +597,17 @@ function buildCustomCSS(prefs) {
   const blocks = [DENSITY_RULES[p.density]].filter(Boolean)
   // 档位规则用 !important：主题每次应用都把 --dt-font-* 写在 <html> 内联样式上，
   // 普通规则压不过内联，重要声明可以（已在 Chromium 实测）；「默认」档不发规则。
-  const textStack = TEXT_FONTS.find(o => o.value === p.fontText)?.stack
-  if (textStack) blocks.push(`html {\n  --dt-font-sans: ${textStack} !important;\n}`)
+  const textPreset = TEXT_FONTS.find(o => o.value === p.fontText)
+  if (textPreset?.stack) {
+    blocks.push(`html {\n  --dt-font-sans: ${textPreset.stack} !important;\n}`)
+    // 输入区跟档位走：app 的 [data-slot='composer-rich-input']:lang(zh/zh-hant/ja)
+    // 把系统 CJK 字体排在 var(--dt-font-sans) 前面（为了 …—“” 全角渲染），档位在
+    // 中/日文界面下进不了输入框 —— 这里按档位重发 font-family 反压 :lang 规则，
+    // 输入框与消息区同源；回退栈自带 CJK/emoji，全角标点随档位字体走。
+    blocks.push(`html [data-slot='composer-rich-input'] {\n  font-family: var(--dt-font-sans) !important;\n}`)
+    // 可读性渲染增强（如衬线档的小字号描边）随档位发出，继承到全部文本。
+    if (textPreset.legibility) blocks.push(`html {\n  ${textPreset.legibility}\n}`)
+  }
   const codeStack = CODE_FONTS.find(o => o.value === p.fontCode)?.stack
   if (codeStack) blocks.push(`html {\n  --dt-font-mono: ${codeStack} !important;\n}`)
   return `${customCSSBase}\n:root {\n  --composer-width: ${p.colWidth};\n}\n${blocks.join('\n')}\n`
@@ -604,9 +618,12 @@ const codexTheme = {
   colors: light,
   darkColors: dark,
   typography: {
+    // 回退栈补全：CJK 补 Linux 档（Noto Sans CJK SC），尾部照 app 自带栈挂 emoji
+    // 回退（emoji 字体只兜 emoji 字形，正文渲染不变）。
     fontSans:
-      "-apple-system, BlinkMacSystemFont, 'SF Pro Text', 'Helvetica Neue', 'PingFang SC', 'Hiragino Sans GB', 'Microsoft YaHei', sans-serif",
-    fontMono: "ui-monospace, 'SF Mono', SFMono-Regular, Menlo, Monaco, Consolas, 'Liberation Mono', monospace",
+      "-apple-system, BlinkMacSystemFont, 'SF Pro Text', 'Helvetica Neue', 'PingFang SC', 'Hiragino Sans GB', 'Microsoft YaHei', 'Noto Sans CJK SC', sans-serif, 'Apple Color Emoji', 'Segoe UI Emoji', 'Segoe UI Symbol', 'Noto Color Emoji', emoji",
+    fontMono:
+      "ui-monospace, 'SF Mono', SFMono-Regular, Menlo, Monaco, Consolas, 'Liberation Mono', 'PingFang SC', 'Hiragino Sans GB', 'Microsoft YaHei', 'Noto Sans CJK SC', monospace, 'Apple Color Emoji', 'Segoe UI Emoji', 'Segoe UI Symbol', 'Noto Color Emoji', emoji",
     // 根行高（画到 --dt-line-height）：正文、消息内容、界面文字统一的行距基线。
     // 这是主题唯一的行高旋钮——之前没设，正文一直在吃 app 默认 1.5。
     // 「内容间距」档位会按 pref 生成 :root 声明覆盖此值。
