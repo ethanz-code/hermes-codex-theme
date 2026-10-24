@@ -91,6 +91,7 @@ const PREF_DEFAULTS = { colWidth: '55rem', density: 'comfortable', language: 'sy
 const LANGUAGES = ['system', 'zh', 'en']
 let storage = null
 let pluginOs = null
+let registerThemeEntry = () => {}
 
 // 语言偏好变化的订阅口（设置页切换语言时重建 ⌘K / 设置页标题等注册期文案）。
 const languageListeners = new Set()
@@ -135,11 +136,14 @@ function setPref(key, value) {
   if (key === 'language') languageListeners.forEach(listener => listener())
 }
 
+// 阅读栏宽度随主题的 customCSS 发出（只在 Codex 激活时生效），设置变更时重注册
+// 同 id 的 THEMES_AREA 条目覆盖旧值；顺带清掉旧版本写进 <html> 内联样式的残留。
 function applyPrefs(prefs) {
   const stored = prefs || (storage ? storage.get('prefs', null) : null) || {}
   const p = { ...PREF_DEFAULTS, ...stored }
   const root = document.documentElement
-  root.style.setProperty('--composer-width', normalizeColWidth(p.colWidth))
+  root.style.removeProperty('--composer-width')
+  registerThemeEntry()
   root.dataset.codexDensity = normalizeDensity(p.density)
   root.dataset.codexTextFont = normalizeFont(p.fontText, TEXT_FONTS)
   root.dataset.codexCodeFont = normalizeFont(p.fontCode, CODE_FONTS)
@@ -218,11 +222,10 @@ const light = {
 
 // ─── 样式基底（圆角刻度 / 发丝线 / 间距节奏 / 弹窗 / 侧栏 / 设置页面板） ────────
 
-const customCSS = `
-/* 阅读栏与字号基线（默认阅读栏 880px；具体值由设置页 --composer-width 覆盖。
-   行高走主题 typography.line-height（--dt-line-height: 1.7），此处只管阅读栏。 */
+const customCSSBase = `
+/* 字号与间距基线（阅读栏宽度 --composer-width 随偏好在 customCSS 尾部输出，
+   行高走主题 typography.line-height（--dt-line-height: 1.7），此处只管阅读栏）。 */
 :root {
-  --composer-width: 55rem;
   --dt-user-bubble-max-width: 78%;
   --conversation-text-base-size: 0.9375rem;
   --conversation-base-line-height: 1.5rem;
@@ -623,6 +626,10 @@ html[data-codex-composer-drag] [data-slot='composer-surface'] {
 }
 `
 
+function buildCustomCSS(colWidth) {
+  return `${customCSSBase}\n:root {\n  --composer-width: ${colWidth};\n}\n`
+}
+
 const codexTheme = {
   name: 'codex',
   colors: light,
@@ -635,8 +642,7 @@ const codexTheme = {
     // 这是主题唯一的行高旋钮——之前没设，正文一直在吃 app 默认 1.5。
     // 「内容间距」档位会按 html[data-codex-density] 覆盖此值。
     lineHeight: '1.7'
-  },
-  customCSS
+  }
 }
 
 // ─── 设置页（设置 → 插件 → Codex Theme）────────────────────────────────────────
@@ -746,7 +752,12 @@ function makeT(fallbackT) {
 }
 
 function buildTheme(t) {
-  return { ...codexTheme, label: t('themeLabel'), description: t('themeDescription') }
+  return {
+    ...codexTheme,
+    label: t('themeLabel'),
+    description: t('themeDescription'),
+    customCSS: buildCustomCSS(getPref('colWidth'))
+  }
 }
 
 function SettingsRow({ title, hint, control }) {
@@ -1293,6 +1304,9 @@ export default {
     pluginOs = ctx.os || null
     ctx.i18n.register(LOCALES)
     const t = makeT(ctx.i18n.t)
+    registerThemeEntry = () => {
+      ctx.register({ id: 'codex', area: THEMES_AREA, data: buildTheme(t) })
+    }
 
     // 首次安装时自动接管一次主题；之后完全尊重用户在「外观」里的手动选择
     // （避免每次启动/热重载把用户选的其它主题抢回来）。切回 Codex：
