@@ -7,7 +7,7 @@
  *   - 发丝线代替阴影：1px 边框做层次，表面保持平整
  *   - 圆角走 OpenAI 官方刻度：内联代码 4px、侧栏行 8px、控件 10px、卡片/菜单/弹窗/气泡 12px、composer 20px
  *   - 边框统一 10% 前景色（浅 #e7e7e7 / 深 #2a2a2a）；用户气泡前景 5%（浅 #f3f3f3 / 深 #202020）无描边
- *   - 间距节奏：4px 网格；行高 1.7（紧凑 1.55 / 宽松 1.8）
+ *   - 间距节奏：4px 网格；行高 1.4286（紧凑 1.3 / 宽松 1.55）
  *   - 阅读栏 768 / 880 / 992px 三档（默认 880px）
  *
  * 控制入口（不在输入框加东西）：
@@ -755,7 +755,7 @@ const LOCALES = {
     widthLabel: 'Reading width',
     widthHint: 'Prose column width — Compact 768px · Comfortable 880px · Roomy 992px (ChatGPT uses 720–768px).',
     densityLabel: 'Content spacing',
-    densityHint: 'Line height and paragraph rhythm — Compact 1.55 · Comfortable 1.7 (default) · Roomy 1.8.',
+    densityHint: 'Line height and paragraph rhythm — Compact 1.3 · Comfortable 1.4286 (default) · Roomy 1.55.',
     compact: 'Compact',
     comfortable: 'Comfortable',
     roomy: 'Roomy',
@@ -810,7 +810,7 @@ const LOCALES = {
     widthLabel: '阅读宽度',
     widthHint: '正文列宽 —— 紧凑 768px · 舒适 880px · 宽松 992px（ChatGPT 为 720–768px）。',
     densityLabel: '内容间距',
-    densityHint: '行距与段落节奏 —— 紧凑 1.55 · 舒适 1.7（默认）· 宽松 1.8。',
+    densityHint: '行距与段落节奏 —— 紧凑 1.3 · 舒适 1.4286（默认）· 宽松 1.55。',
     compact: '紧凑',
     comfortable: '舒适',
     roomy: '宽松',
@@ -1635,7 +1635,7 @@ export default {
   id: ID,
   name: 'Codex Theme',
   // 面板描述的唯一来源（desktop 契约无 version/author 字段，尾注与 plugin.yaml 的 version/author 同步）
-  description: 'Codex × ChatGPT inspired theme for the Hermes Desktop chat — dual light/dark palettes that follow the system appearance, graphite-on-paper typography with a 1.7 root line height and content-spacing presets (1.55/1.7/1.8), the OpenAI radius scale (inline 4px / rows 8px / controls 10px / cards 12px / composer 20px), hairline borders, and a bilingual Settings page (appearance mode, 768/880/992px reading width, text & code font presets, user/assistant chat bubble colors, input focus guard (hands-off / follow-mouse), zh/en language, GitHub Issues feedback). (v1.1.0 · ethanz-code)',
+  description: 'Codex × ChatGPT inspired theme for the Hermes Desktop chat — dual light/dark palettes that follow the system appearance, graphite-on-paper typography with a 1.4286 root line height and content-spacing presets (1.3/1.4286/1.55), the OpenAI radius scale (inline 4px / rows 8px / controls 10px / cards 12px / composer 20px), hairline borders, and a bilingual Settings page (appearance mode, 768/880/992px reading width, text & code font presets, user/assistant chat bubble colors, input focus guard (hands-off / follow-mouse), zh/en language, GitHub Issues feedback). (v1.1.0 · ethanz-code)',
   register(ctx) {
     storage = ctx.storage
     pluginOs = ctx.os || null
