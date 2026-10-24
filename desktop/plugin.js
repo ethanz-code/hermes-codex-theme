@@ -12,7 +12,8 @@
  *
  * 控制入口（不在输入框加东西）：
  *   设置 → 插件 → Codex Theme：亮暗模式（跟随系统/深色/浅色）、阅读宽度、内容间距、
- *   字体（正文字体/代码字体）、语言（跟随系统/中文/英文，文案全走 i18n）、反馈问题（GitHub Issues）
+ *   字体（正文字体/代码字体）、气泡颜色（用户/助手的背景色与文字色）、语言（跟随系统/中文/英文，
+ *   文案全走 i18n）、反馈问题（GitHub Issues）
  *   ⌘K：「Theme: 使用 Codex 主题」「Theme: Codex 主题设置」
  *
  * 安装：~/.hermes/desktop-plugins/codex-theme/plugin.js（目录名 == id）
@@ -99,7 +100,26 @@ const DENSITY_RULES = {
 }`
 }
 
-const PREF_DEFAULTS = { colWidth: '55rem', density: 'comfortable', language: 'system', fontText: 'default', fontCode: 'default' }
+// 气泡颜色四档（用户/助手 × 背景/文字）：'' 表示不覆盖，未配置时不发任何规则，
+// 外观与默认完全一致。取值只收十六进制色（拾色器产出），其余输入一律丢弃，
+// 避免拼进 customCSS 时注入外来声明。
+const HEX_COLOR_RE = /^#(?:[0-9a-f]{3,4}|[0-9a-f]{6}|[0-9a-f]{8})$/i
+
+function normalizeColor(value) {
+  return typeof value === 'string' && HEX_COLOR_RE.test(value) ? value.toLowerCase() : ''
+}
+
+const PREF_DEFAULTS = {
+  colWidth: '55rem',
+  density: 'comfortable',
+  language: 'system',
+  fontText: 'default',
+  fontCode: 'default',
+  bubbleUserBg: '',
+  bubbleUserText: '',
+  bubbleAssistantBg: '',
+  bubbleAssistantText: ''
+}
 const LANGUAGES = ['system', 'zh', 'en']
 let storage = null
 let pluginOs = null
@@ -137,7 +157,11 @@ function normalizePrefs(stored) {
     density: normalizeDensity(p.density),
     language: normalizeLanguage(p.language),
     fontText: normalizeFont(p.fontText, TEXT_FONTS),
-    fontCode: normalizeFont(p.fontCode, CODE_FONTS)
+    fontCode: normalizeFont(p.fontCode, CODE_FONTS),
+    bubbleUserBg: normalizeColor(p.bubbleUserBg),
+    bubbleUserText: normalizeColor(p.bubbleUserText),
+    bubbleAssistantBg: normalizeColor(p.bubbleAssistantBg),
+    bubbleAssistantText: normalizeColor(p.bubbleAssistantText)
   }
 }
 
@@ -585,11 +609,59 @@ html.dark [data-slot='dialog-overlay'] {
   flex-shrink: 0;
   white-space: nowrap;
 }
+.codex-bubble-color {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.codex-bubble-color input[type='color'] {
+  width: 42px;
+  height: 28px;
+  padding: 2px;
+  border: 1px solid var(--dt-border);
+  border-radius: var(--codex-radius-row);
+  background: transparent;
+  cursor: pointer;
+}
+.codex-bubble-color input[type='color'][data-unset='true'] {
+  opacity: 0.45;
+}
 `
+
+// 气泡颜色（配置了才发规则）：用户气泡沿用 --dt-user-bubble 合成通道（保留
+// --user-bubble-keep 的气泡透明度），亮暗两条与基底同选择器、同特异性，靠同
+// 样式表内注入顺序覆盖；助手气泡默认无底色，配置背景后才包出圆角气泡。
+// 文字色规则带 html 前缀把特异性抬到 0,2,1+，压过 app 的同名工具类，
+// 不依赖注入顺序。
+function bubbleColorBlocks(p) {
+  const blocks = []
+  const userScope = "[data-slot='aui_user-message-root'] [data-slot='aui_user-bubble-actions']"
+  if (p.bubbleUserBg) {
+    const mix = `color-mix(in srgb, ${p.bubbleUserBg} var(--user-bubble-keep, 100%), transparent)`
+    blocks.push(`${userScope} {\n  --dt-user-bubble: ${mix};\n}`)
+    blocks.push(`html.dark ${userScope} {\n  --dt-user-bubble: ${mix};\n}`)
+  }
+  if (p.bubbleUserText) {
+    blocks.push(`html ${userScope} .composer-human-message {\n  color: ${p.bubbleUserText};\n}`)
+  }
+  const assistantDecls = []
+  if (p.bubbleAssistantBg) {
+    assistantDecls.push(
+      `background: ${p.bubbleAssistantBg}`,
+      'border-radius: var(--codex-radius-card)',
+      'padding: var(--codex-bubble-pad-y) var(--codex-bubble-pad-x)'
+    )
+  }
+  if (p.bubbleAssistantText) assistantDecls.push(`color: ${p.bubbleAssistantText}`)
+  if (assistantDecls.length) {
+    blocks.push(`html [data-slot='aui_assistant-message-content'] {\n  ${assistantDecls.join(';\n  ')};\n}`)
+  }
+  return blocks
+}
 
 function buildCustomCSS(prefs) {
   const p = prefs || normalizePrefs(storage ? storage.get('prefs', null) : null)
-  const blocks = [DENSITY_RULES[p.density]].filter(Boolean)
+  const blocks = [DENSITY_RULES[p.density], ...bubbleColorBlocks(p)].filter(Boolean)
   // 档位规则用 !important：主题每次应用都把 --dt-font-* 写在 <html> 内联样式上，
   // 普通规则压不过内联，重要声明可以（已在 Chromium 实测）；「默认」档不发规则。
   const textStack = TEXT_FONTS.find(o => o.value === p.fontText)?.stack
@@ -651,6 +723,16 @@ const LOCALES = {
     fontMonoText: 'Mono',
     fontFira: 'Fira Code',
     fontCourier: 'Courier',
+    panelBubbles: 'Chat bubbles',
+    bubbleUserBgLabel: 'User bubble background',
+    bubbleUserBgHint: 'Your message bubble. “Default” keeps the theme gray (#F3F3F3 light / #202020 dark, still mixed with the bubble-transparency setting). The picked color is used in both light and dark, applies instantly and is remembered.',
+    bubbleUserTextLabel: 'User bubble text',
+    bubbleUserTextHint: 'Text inside your own bubbles. “Default” keeps the theme foreground.',
+    bubbleAssistantBgLabel: 'Assistant bubble background',
+    bubbleAssistantBgHint: 'Behind the assistant reply. “Default” keeps it transparent (no bubble); picking a color wraps the reply in a rounded bubble, same color in light and dark.',
+    bubbleAssistantTextLabel: 'Assistant bubble text',
+    bubbleAssistantTextHint: 'Text of assistant replies. “Default” keeps the theme foreground.',
+    colorDefault: 'Default',
     panelGeneral: 'General',
     languageLabel: 'Language',
     languageHint: 'Language for this plugin’s UI (settings, palette, popups) — follows the system & app language by default, or pin it below.',
@@ -692,6 +774,16 @@ const LOCALES = {
     fontMonoText: '等宽',
     fontFira: 'Fira Code',
     fontCourier: 'Courier',
+    panelBubbles: '对话气泡',
+    bubbleUserBgLabel: '用户气泡背景',
+    bubbleUserBgHint: '你自己消息的气泡底色。「默认」为主题灰（浅 #F3F3F3 / 深 #202020，仍与「气泡透明度」合成）。选色亮暗两套同样生效，改完立即生效并自动记住。',
+    bubbleUserTextLabel: '用户气泡文字',
+    bubbleUserTextHint: '你自己气泡里的文字颜色。「默认」跟随主题正文色。',
+    bubbleAssistantBgLabel: '助手气泡背景',
+    bubbleAssistantBgHint: '助手回复的底色。「默认」透明（无气泡，直接落在画布上）；选色后回复会被圆角气泡包起，亮暗两套同一颜色。',
+    bubbleAssistantTextLabel: '助手气泡文字',
+    bubbleAssistantTextHint: '助手回复的文字颜色。「默认」跟随主题正文色。',
+    colorDefault: '默认',
     panelGeneral: '通用',
     languageLabel: '语言',
     languageHint: '本插件界面（设置页、⌘K、弹窗）的显示语言 —— 默认跟随系统与应用语言，也可固定为中文或英文。',
@@ -755,6 +847,30 @@ function SettingsPanel({ title, rows }) {
   })
 }
 
+// 拾色器必须有具体值：未配置时显示主题默认色做预览（data-unset 淡显），
+// 点「默认」清空偏好（不覆盖），外观回到主题原色。
+const BUBBLE_SWATCH_FALLBACK = {
+  bubbleUserBg: '#f3f3f3',
+  bubbleUserText: '#1a1a1a',
+  bubbleAssistantBg: '#ffffff',
+  bubbleAssistantText: '#1a1a1a'
+}
+
+function ColorSwatch({ prefKey, value, onChange, onReset, resetLabel }) {
+  return jsxs('div', {
+    className: 'codex-bubble-color',
+    children: [
+      jsx('input', {
+        type: 'color',
+        'data-unset': value ? 'false' : 'true',
+        value: value || BUBBLE_SWATCH_FALLBACK[prefKey],
+        onChange: e => onChange(e.target.value)
+      }),
+      jsx(Button, { variant: 'outline', size: 'sm', onClick: onReset, children: resetLabel })
+    ]
+  })
+}
+
 function SettingsPage() {
   const t = makeT(usePluginI18n(ID))
   const { mode, setMode, themeName } = useTheme()
@@ -763,6 +879,10 @@ function SettingsPage() {
   const [density, setDensity] = useState(() => getPref('density'))
   const [fontText, setFontText] = useState(() => getPref('fontText'))
   const [fontCode, setFontCode] = useState(() => getPref('fontCode'))
+  const [bubbleUserBg, setBubbleUserBg] = useState(() => getPref('bubbleUserBg'))
+  const [bubbleUserText, setBubbleUserText] = useState(() => getPref('bubbleUserText'))
+  const [bubbleAssistantBg, setBubbleAssistantBg] = useState(() => getPref('bubbleAssistantBg'))
+  const [bubbleAssistantText, setBubbleAssistantText] = useState(() => getPref('bubbleAssistantText'))
 
   const pickWidth = value => {
     setPref('colWidth', value)
@@ -787,6 +907,18 @@ function SettingsPage() {
   const pickCodeFont = value => {
     setPref('fontCode', value)
     setFontCode(value)
+  }
+
+  const pickBubbleColor = (key, setter) => value => {
+    const v = normalizeColor(value)
+    if (!v) return
+    setPref(key, v)
+    setter(v)
+  }
+
+  const resetBubbleColor = (key, setter) => () => {
+    setPref(key, '')
+    setter('')
   }
 
   return jsxs('div', {
@@ -879,6 +1011,60 @@ function SettingsPage() {
               value: fontCode,
               onChange: pickCodeFont,
               options: CODE_FONTS.map(o => ({ id: o.value, label: t(o.labelKey) }))
+            })
+          })
+        ]
+      }),
+
+      jsx(SettingsPanel, {
+        title: t('panelBubbles'),
+        rows: [
+          jsx(SettingsRow, {
+            key: 'bubbleUserBg',
+            title: t('bubbleUserBgLabel'),
+            hint: t('bubbleUserBgHint'),
+            control: jsx(ColorSwatch, {
+              prefKey: 'bubbleUserBg',
+              value: bubbleUserBg,
+              onChange: pickBubbleColor('bubbleUserBg', setBubbleUserBg),
+              onReset: resetBubbleColor('bubbleUserBg', setBubbleUserBg),
+              resetLabel: t('colorDefault')
+            })
+          }),
+          jsx(SettingsRow, {
+            key: 'bubbleUserText',
+            title: t('bubbleUserTextLabel'),
+            hint: t('bubbleUserTextHint'),
+            control: jsx(ColorSwatch, {
+              prefKey: 'bubbleUserText',
+              value: bubbleUserText,
+              onChange: pickBubbleColor('bubbleUserText', setBubbleUserText),
+              onReset: resetBubbleColor('bubbleUserText', setBubbleUserText),
+              resetLabel: t('colorDefault')
+            })
+          }),
+          jsx(SettingsRow, {
+            key: 'bubbleAssistantBg',
+            title: t('bubbleAssistantBgLabel'),
+            hint: t('bubbleAssistantBgHint'),
+            control: jsx(ColorSwatch, {
+              prefKey: 'bubbleAssistantBg',
+              value: bubbleAssistantBg,
+              onChange: pickBubbleColor('bubbleAssistantBg', setBubbleAssistantBg),
+              onReset: resetBubbleColor('bubbleAssistantBg', setBubbleAssistantBg),
+              resetLabel: t('colorDefault')
+            })
+          }),
+          jsx(SettingsRow, {
+            key: 'bubbleAssistantText',
+            title: t('bubbleAssistantTextLabel'),
+            hint: t('bubbleAssistantTextHint'),
+            control: jsx(ColorSwatch, {
+              prefKey: 'bubbleAssistantText',
+              value: bubbleAssistantText,
+              onChange: pickBubbleColor('bubbleAssistantText', setBubbleAssistantText),
+              onReset: resetBubbleColor('bubbleAssistantText', setBubbleAssistantText),
+              resetLabel: t('colorDefault')
             })
           })
         ]
@@ -1326,7 +1512,7 @@ export default {
   id: ID,
   name: 'Codex Theme',
   // 面板描述的唯一来源（desktop 契约无 version/author 字段，尾注与 plugin.yaml 的 version/author 同步）
-  description: 'Codex × ChatGPT inspired theme for the Hermes Desktop chat — dual light/dark palettes that follow the system appearance, graphite-on-paper typography with a 1.7 root line height and content-spacing presets (1.55/1.7/1.8), the OpenAI radius scale (inline 4px / rows 8px / controls 10px / cards 12px / composer 20px), hairline borders, and a bilingual Settings page (appearance mode, 768/880/992px reading width, text & code font presets, zh/en language, GitHub Issues feedback). (v1.1.0 · ethanz-code)',
+  description: 'Codex × ChatGPT inspired theme for the Hermes Desktop chat — dual light/dark palettes that follow the system appearance, graphite-on-paper typography with a 1.7 root line height and content-spacing presets (1.55/1.7/1.8), the OpenAI radius scale (inline 4px / rows 8px / controls 10px / cards 12px / composer 20px), hairline borders, and a bilingual Settings page (appearance mode, 768/880/992px reading width, text & code font presets, user/assistant chat bubble colors, zh/en language, GitHub Issues feedback). (v1.1.0 · ethanz-code)',
   register(ctx) {
     storage = ctx.storage
     pluginOs = ctx.os || null

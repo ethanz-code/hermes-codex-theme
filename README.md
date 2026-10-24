@@ -46,6 +46,8 @@ the plugin says to you.
 - **Text & code font presets** — body text (Default / Serif / Mono) and code
   (Default / Fira Code / Courier), each with Chinese fallbacks so mixed
   Chinese/English text renders well; *Default* never overrides your font setup
+- **Chat bubble colors** — pick background and text colors for your own bubbles
+  and for assistant replies; *Default* keeps the theme's own look
 - **English / 中文 interface** — follows the system & app language by default,
   or pin one in Settings; every label, hint and popup is localized
 - **Feedback in one click** — Settings carries a *Open GitHub Issues* button
@@ -111,7 +113,7 @@ also applies itself once on first load).
 ## Settings
 
 Everything lives in **Settings → Plugins → Codex Theme**, grouped into
-*Appearance*, *Typography & layout* and *General* panels:
+*Appearance*, *Typography & layout*, *Chat bubbles* and *General* panels:
 
 | Setting | Options | Notes |
 |---|---|---|
@@ -120,6 +122,10 @@ Everything lives in **Settings → Plugins → Codex Theme**, grouped into
 | Content spacing | Compact (1.55) / Comfortable (1.7, default) / Roomy (1.8) | Line height + paragraph & bubble rhythm |
 | Text font | Default / Serif / Mono | Chinese fallbacks in every preset; *Default* keeps theme/app fonts |
 || Code font | Default / Fira Code / Courier | Fira Code / JetBrains Mono must be installed locally — otherwise the system mono kicks in |
+| User bubble background | Color picker + *Default* | *Default*: theme gray (#F3F3F3 light / #202020 dark) |
+| User bubble text | Color picker + *Default* | *Default*: theme foreground |
+| Assistant bubble background | Color picker + *Default* | *Default*: transparent — replies sit straight on the canvas |
+| Assistant bubble text | Color picker + *Default* | *Default*: theme foreground |
 | Language | Follow system / 中文 / English | Plugin UI only; Hermes' own language is untouched |
 | Feedback | *Open GitHub Issues* | Opens the repo's Issues page in your browser |
 
@@ -130,6 +136,9 @@ theme settings* (searchable in both languages).
 > Choosing a non-default font preset overrides `--dt-font-sans` /
 > `--dt-font-mono` wholesale — including a custom chat font set in Hermes'
 > appearance settings. The *Default* preset overrides nothing.
+> Bubble colors apply instantly, survive restarts and use the same color in
+> light and dark; they paint while the Codex theme is active, and *Default*
+> restores the theme's own colors.
 
 ### What this theme deliberately does not touch
 
@@ -161,8 +170,8 @@ to know before installing:
   GitHub Issues page in your browser (`ctx.os.openExternal`) — the only
   external action in the plugin, and only when you press the button.
 - **Storage:** one plugin-scoped record (`ctx.storage`) for your settings-page
-  choices — appearance mode, reading width, content spacing, fonts and
-  language.
+  choices — appearance mode, reading width, content spacing, fonts, chat bubble
+  colors and language.
 - **Styling:** the theme's `customCSS` is injected as a scoped style block by
   the app's own theme engine, exactly like user skins; it changes visuals, never
   behavior.
