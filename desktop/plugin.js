@@ -12,8 +12,8 @@
  *
  * 控制入口（不在输入框加东西）：
  *   设置 → 插件 → Codex Theme：亮暗模式（跟随系统/深色/浅色）、阅读宽度、内容间距、
- *   字体（正文字体/代码字体）、气泡颜色（用户/助手的背景色与文字色）、语言（跟随系统/中文/英文，
- *   文案全走 i18n）、反馈问题（GitHub Issues）
+ *   字体（正文字体/代码字体）、气泡颜色（用户/助手的背景色与文字色）、输入框焦点（防抢占/跟随鼠标）、
+ *   语言（跟随系统/中文/英文，文案全走 i18n）、反馈问题（GitHub Issues）
  *   ⌘K：「Theme: 使用 Codex 主题」「Theme: Codex 主题设置」
  *
  * 安装：~/.hermes/desktop-plugins/codex-theme/plugin.js（目录名 == id）
@@ -1614,7 +1614,7 @@ export default {
   id: ID,
   name: 'Codex Theme',
   // 面板描述的唯一来源（desktop 契约无 version/author 字段，尾注与 plugin.yaml 的 version/author 同步）
-  description: 'Codex × ChatGPT inspired theme for the Hermes Desktop chat — dual light/dark palettes that follow the system appearance, graphite-on-paper typography with a 1.7 root line height and content-spacing presets (1.55/1.7/1.8), the OpenAI radius scale (inline 4px / rows 8px / controls 10px / cards 12px / composer 20px), hairline borders, and a bilingual Settings page (appearance mode, 768/880/992px reading width, text & code font presets, user/assistant chat bubble colors, zh/en language, GitHub Issues feedback). (v1.1.0 · ethanz-code)',
+  description: 'Codex × ChatGPT inspired theme for the Hermes Desktop chat — dual light/dark palettes that follow the system appearance, graphite-on-paper typography with a 1.7 root line height and content-spacing presets (1.55/1.7/1.8), the OpenAI radius scale (inline 4px / rows 8px / controls 10px / cards 12px / composer 20px), hairline borders, and a bilingual Settings page (appearance mode, 768/880/992px reading width, text & code font presets, user/assistant chat bubble colors, input focus guard (hands-off / follow-mouse), zh/en language, GitHub Issues feedback). (v1.1.0 · ethanz-code)',
   register(ctx) {
     storage = ctx.storage
     pluginOs = ctx.os || null
